@@ -5,7 +5,7 @@ import { useData } from '../store/DataContext'
 import { CoursePanel } from '../components/CoursePanel'
 import { Badge, Button, ConfirmDialog, EmptyState } from '../components/ui'
 import { computeActivePayments, paymentRowStatus, cellColor, cellTooltip } from '../utils/calc'
-import { dateKey, formatDateAZ, weekdayOf } from '../utils/dates'
+import { dateKey, formatDateAZ } from '../utils/dates'
 import type { CellValue, Course, CourseInstance, Month, Settings } from '../types'
 
 type Editing = {
@@ -286,14 +286,11 @@ export function SchedulePage() {
                   </th>
                   {Array.from({ length: dim }, (_, i) => i + 1).map((day) => {
                     const date = dateKey(currentMonth.year, currentMonth.month, day)
-                    const weekend = weekdayOf(date) === 0 || weekdayOf(date) === 6
                     return (
                       <th
                         key={day}
                         title={formatDateAZ(date)}
-                        className={`min-w-[52px] border-b border-r border-slate-200 px-1 py-2 text-center text-xs font-bold ${
-                          weekend ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-600'
-                        }`}
+                        className="min-w-[52px] border-b border-r border-slate-200 bg-slate-100 px-1 py-2 text-center text-xs font-bold text-slate-600"
                       >
                         {day}
                       </th>
@@ -344,7 +341,6 @@ export function SchedulePage() {
                             onLongPressEnd={cancelLongPress}
                             onEditKeyDown={handleEditKeyDown}
                             onCellKeyDown={handleCellKeyDown}
-                            isWeekend={weekdayOf(dateKey(currentMonth.year, currentMonth.month, day)) === 0 || weekdayOf(dateKey(currentMonth.year, currentMonth.month, day)) === 6}
                           />
                         )
                       })}
@@ -492,7 +488,6 @@ function Cell({
   onLongPressEnd,
   onEditKeyDown,
   onCellKeyDown,
-  isWeekend,
 }: {
   dataCell: string
   cell: CellValue | undefined
@@ -513,11 +508,10 @@ function Cell({
   onLongPressEnd: () => void
   onEditKeyDown: (e: React.KeyboardEvent) => void
   onCellKeyDown: (e: KeyboardEvent, t: string, d: number) => void
-  isWeekend: boolean
 }) {
   const color = cellColor(cell, instance, settings.colors)
   const tooltip = cellTooltip(cell, instance, course, settings)
-  const bg = cell?.value === 'X' ? '#e2e8f0' : selected ? '#dbeafe' : isWeekend ? '#fffbeb' : '#ffffff'
+  const bg = cell?.value === 'X' ? '#e2e8f0' : selected ? '#dbeafe' : '#ffffff'
 
   return (
     <td
