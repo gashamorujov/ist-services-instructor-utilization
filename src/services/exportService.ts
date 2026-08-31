@@ -7,7 +7,7 @@ type MonthData = {
   month: Month
   teachers: Teacher[]
   courses: Record<string, Course>
-  cells: Record<string, Record<string, CellValue>> // teacherId -> dayKey -> cell
+  cells: Record<string, Record<string, CellValue>>
   instances: Record<string, CourseInstance>
   settings: Settings
 }
@@ -44,13 +44,17 @@ function sheetForMonth(data: MonthData): XLSX.WorkSheet {
   const teachers = data.teachers.filter((t) => t.active)
   const rows: (string | number | null)[][] = []
 
-  // Título
-  rows.push(['IST Services Əlavə Təhsil Mərkəzi'])
+  // Title row
+  rows.push(['Services — Tədris Cədvəli'])
   rows.push([])
-  rows.push([`Instructor Utilization for ${month.name.toUpperCase()} -cı il tarixinə təlimatçıların tədris yükü`])
-  const header = ['S/S', 'Full Name/ S.A.A', ...Array.from({ length: dim }, (_, i) => i + 1)]
+  rows.push([`Instructor Utilization — ${month.name.toUpperCase()} tarixinə təlimatçıların tədris yükü`])
+  rows.push([])
+
+  // Column headers: S/S | Ad Soyad | 1 | 2 | ... | 31
+  const header: (string | number)[] = ['S/S', 'Ad Soyad', ...Array.from({ length: dim }, (_, i) => i + 1)]
   rows.push(header)
 
+  // Teacher rows
   for (const t of teachers) {
     const row: (string | number | null)[] = [t.order, t.fullName]
     for (let d = 1; d <= dim; d++) {
@@ -58,11 +62,9 @@ function sheetForMonth(data: MonthData): XLSX.WorkSheet {
       if (cell?.value) {
         const inst = cell.courseInstanceId ? instances[cell.courseInstanceId] : undefined
         let text = cell.value
-        const extras: string[] = []
-        if (inst?.room) extras.push(`Otaq: ${inst.room}`)
-        if (inst?.location) extras.push(inst.location)
-        const second = extras.length ? `\n${extras.join(', ')}` : ''
-        row.push(`${text}${second}`)
+        if (inst?.room) text += `\n[Otaq: ${inst.room}]`
+        if (inst?.location) text += ` ${inst.location}`
+        row.push(text)
       } else {
         row.push(null)
       }
@@ -70,15 +72,18 @@ function sheetForMonth(data: MonthData): XLSX.WorkSheet {
     rows.push(row)
   }
 
+  // Spacer rows
   rows.push([])
   rows.push([])
-  rows.push(['Müəllimlərin ödənişləri'])
+
+  // Payment section header
+  rows.push(['Ödənişlər'])
+  rows.push([])
+
+  // Payment table header
   rows.push(['Müəllim', 'Kurs sayı', 'Ümumi saat', 'Məbləğ (AZN)', 'Ödəniş statusu'])
-  const payments = computePayments(
-    Object.values(instances),
-    teachers,
-    settings,
-  )
+
+  const payments = computePayments(Object.values(instances), teachers, settings)
   const teacherName = (id: string) => teachers.find((t) => t.id === id)?.fullName ?? id
   for (const p of payments) {
     rows.push([
@@ -90,15 +95,22 @@ function sheetForMonth(data: MonthData): XLSX.WorkSheet {
     ])
   }
 
+  // Total row
+  if (payments.length > 0) {
+    const totalCourses = payments.reduce((s, p) => s + p.courseCount, 0)
+    const totalHours = payments.reduce((s, p) => s + p.totalHours, 0)
+    const totalAmount = payments.reduce((s, p) => s + p.totalAmount, 0)
+    rows.push([])
+    rows.push(['CƏMİ', totalCourses, totalHours, totalAmount, ''])
+  }
+
   const ws = XLSX.utils.aoa_to_sheet(rows)
+
+  // Column widths
   ws['!cols'] = [
-    { wch: 6 },
-    { wch: 34 },
-    ...Array.from({ length: dim }, () => ({ wch: 9 })),
-    { wch: 26 },
-    { wch: 12 },
-    { wch: 13 },
-    { wch: 16 },
+    { wch: 5 },       // S/S
+    { wch: 36 },      // Ad Soyad
+    ...Array.from({ length: dim }, () => ({ wch: 12 })),  // Day columns
   ]
 
   const border = {
@@ -108,28 +120,33 @@ function sheetForMonth(data: MonthData): XLSX.WorkSheet {
     right: { style: 'thin', color: { rgb: 'B0B7C3' } },
   } as const
 
-  // Style title rows
   const center = { vertical: 'center', horizontal: 'center' } as const
-  for (let c = 0; c < dim + 5; c++) {
-    const titleCell = ws[XLSX.utils.encode_cell({ r: 0, c })]
-    if (titleCell) {
-      titleCell.s = {
-        font: { bold: true, sz: 14 },
-        alignment: center,
-      }
+
+  // Title styling
+  const titleCell = ws['A1']
+  if (titleCell) {
+    titleCell.s = {
+      font: { bold: true, sz: 14, color: { rgb: '0F172A' } },
+      alignment: center,
     }
   }
-  const subCell = ws[XLSX.utils.encode_cell({ r: 2, c: 0 })]
+
+  // Subtitle styling
+  const subCell = ws['A3']
   if (subCell) {
-    subCell.s = { font: { bold: true, sz: 12 }, alignment: center }
+    subCell.s = {
+      font: { bold: true, sz: 11, color: { rgb: '334155' } },
+      alignment: center,
+    }
   }
 
-  // Column header style
+  // Column header row (row 4 = index 3)
+  const headerRow = 4
   for (let c = 0; c < dim + 2; c++) {
-    const cell = ws[XLSX.utils.encode_cell({ r: 3, c })]
+    const cell = ws[XLSX.utils.encode_cell({ r: headerRow - 1, c })]
     if (cell) {
       cell.s = {
-        font: { bold: true, color: { rgb: '1F2933' } },
+        font: { bold: true, sz: 10, color: { rgb: '1F2933' } },
         fill: { fgColor: { rgb: 'E2E8F0' } },
         alignment: center,
         border,
@@ -137,13 +154,14 @@ function sheetForMonth(data: MonthData): XLSX.WorkSheet {
     }
   }
 
-  // Grid cells
-  for (let r = 4; r < 4 + teachers.length; r++) {
+  // Teacher grid rows
+  for (let r = headerRow; r < headerRow + teachers.length; r++) {
     const ssn = ws[XLSX.utils.encode_cell({ r, c: 0 })]
     const name = ws[XLSX.utils.encode_cell({ r, c: 1 })]
-    if (ssn) ssn.s = { alignment: center, border }
-    if (name) name.s = { alignment: { vertical: 'center', horizontal: 'left' }, border }
-    const t = teachers[r - 4]
+    if (ssn) ssn.s = { alignment: center, border, font: { sz: 10 } }
+    if (name) name.s = { alignment: { vertical: 'center', horizontal: 'left' }, border, font: { sz: 10 } }
+
+    const t = teachers[r - headerRow]
     for (let d = 1; d <= dim; d++) {
       const cell = ws[XLSX.utils.encode_cell({ r, c: d + 1 })]
       if (!cell) continue
@@ -157,7 +175,7 @@ function sheetForMonth(data: MonthData): XLSX.WorkSheet {
         color = '#475569'
       }
       cell.s = {
-        font: { bold: true, color: { rgb: fillColor(color).slice(2) } },
+        font: { bold: true, sz: 9, color: { rgb: fillColor(color).slice(2) } },
         fill: { fgColor: { rgb: lighten(color, 0.85) } },
         alignment: { vertical: 'center', horizontal: 'center', wrapText: true },
         border,
@@ -165,25 +183,73 @@ function sheetForMonth(data: MonthData): XLSX.WorkSheet {
     }
   }
 
-  // Payments section header styling
-  const payStart = 4 + teachers.length + 3
-  const payHeader = ws[XLSX.utils.encode_cell({ r: payStart, c: 0 })]
-  if (payHeader) {
-    payHeader.s = { font: { bold: true, sz: 12 } }
+  // Payment section styling
+  const payTitleRow = headerRow + teachers.length + 2
+  const payHeaderRow = payTitleRow + 1
+  const payDataStart = payHeaderRow + 1
+
+  const payTitle = ws[XLSX.utils.encode_cell({ r: payTitleRow, c: 0 })]
+  if (payTitle) {
+    payTitle.s = { font: { bold: true, sz: 12, color: { rgb: '0F172A' } } }
   }
-  const payColHeader = ws[XLSX.utils.encode_cell({ r: payStart + 1, c: 0 })]
-  if (payColHeader) {
-    for (let c = 0; c < 5; c++) {
-      const cell = ws[XLSX.utils.encode_cell({ r: payStart + 1, c })]
-      if (cell) cell.s = { font: { bold: true }, fill: { fgColor: { rgb: 'E2E8F0' } }, border, alignment: center }
+
+  // Payment column headers
+  for (let c = 0; c < 5; c++) {
+    const cell = ws[XLSX.utils.encode_cell({ r: payHeaderRow, c })]
+    if (cell) {
+      cell.s = {
+        font: { bold: true, sz: 10, color: { rgb: '1F2933' } },
+        fill: { fgColor: { rgb: 'E2E8F0' } },
+        border,
+        alignment: center,
+      }
     }
   }
 
+  // Payment data rows
+  for (let i = 0; i < payments.length; i++) {
+    const r = payDataStart + i
+    for (let c = 0; c < 5; c++) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c })]
+      if (cell) {
+        cell.s = {
+          border,
+          alignment: c === 0
+            ? { vertical: 'center', horizontal: 'left' }
+            : { vertical: 'center', horizontal: 'center' },
+          font: { sz: 10 },
+        }
+      }
+    }
+  }
+
+  // Total row styling
+  if (payments.length > 0) {
+    const totalRow = payDataStart + payments.length + 1
+    for (let c = 0; c < 5; c++) {
+      const cell = ws[XLSX.utils.encode_cell({ r: totalRow, c })]
+      if (cell) {
+        cell.s = {
+          font: { bold: true, sz: 10, color: { rgb: '0F172A' } },
+          fill: { fgColor: { rgb: 'E2E8F0' } },
+          border,
+          alignment: c === 0
+            ? { vertical: 'center', horizontal: 'left' }
+            : { vertical: 'center', horizontal: 'center' },
+        }
+      }
+    }
+  }
+
+  // Merges for title and subtitle
   ws['!merges'] = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: dim + 1 } },
     { s: { r: 2, c: 0 }, e: { r: 2, c: dim + 1 } },
   ]
-  ws['!freeze'] = { xSplit: 2, ySplit: 4 }
+
+  // Freeze panes: freeze first 2 columns + header row
+  ws['!freeze'] = { xSplit: 2, ySplit: headerRow }
+
   ws['!pageSetup'] = {
     orientation: 'landscape',
     paperSize: 9,
@@ -192,7 +258,10 @@ function sheetForMonth(data: MonthData): XLSX.WorkSheet {
     fitToHeight: 0,
   }
   ws['!margins'] = { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 }
-  ws['!printArea'] = `A1:${XLSX.utils.encode_cell({ r: payStart + 1 + payments.length, c: dim + 1 })}`
+
+  const lastPayRow = payments.length > 0 ? payDataStart + payments.length + 1 : payTitleRow
+  ws['!printArea'] = `A1:${XLSX.utils.encode_cell({ r: lastPayRow, c: dim + 1 })}`
+
   return ws
 }
 

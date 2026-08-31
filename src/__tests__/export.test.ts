@@ -38,20 +38,25 @@ describe('export', () => {
     const ws = wb.Sheets['Sentyabr 2026']
     expect(ws).toBeTruthy()
     const rows = XLSX.utils.sheet_to_json<(string | number)[]>(ws, { header: 1 })
-    // Title rows + header + teacher row + payments
     expect(rows.length).toBeGreaterThanOrEqual(10)
-    expect(String(rows[0]?.[0])).toContain('IST Services')
-    expect(String(rows[3]?.[1])).toContain('Full Name')
-    expect(rows[3]?.[2]).toBe(1)
-    // teacher row: day 12 has SL with room
-    const teacherRow = rows[4]
+    // Title
+    expect(String(rows[0]?.[0])).toContain('Services')
+    // Header row
+    expect(String(rows[4]?.[1])).toContain('Ad Soyad')
+    expect(String(rows[4]?.[2])).toBe('1')
+    // Teacher row (row 5)
+    const teacherRow = rows[5]
     expect(teacherRow?.[1]).toBe('Rəhimov Ehtiram')
     expect(String(teacherRow?.[13])).toContain('SL')
     expect(String(teacherRow?.[13])).toContain('1/3')
-    // payments section
-    const payIdx = rows.findIndex((r) => r?.[0] === 'Müəllimlərin ödənişləri')
+    // Payments section
+    const payIdx = rows.findIndex((r) => r?.[0] === 'Ödənişlər')
     expect(payIdx).toBeGreaterThan(0)
-    const payRow = rows[payIdx + 2]
+    // Payment header
+    const payHeaderIdx = payIdx + 2
+    expect(String(rows[payHeaderIdx]?.[0])).toBe('Müəllim')
+    // Payment data
+    const payRow = rows[payHeaderIdx + 1]
     expect(payRow?.[0]).toBe('Rəhimov Ehtiram')
     expect(payRow?.[1]).toBe(4)
     expect(payRow?.[2]).toBe(32)

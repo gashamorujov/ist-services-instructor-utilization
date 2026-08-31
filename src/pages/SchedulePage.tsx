@@ -398,10 +398,6 @@ export function SchedulePage() {
               className="w-40 rounded-lg border border-slate-300 bg-white py-1.5 pl-8 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100"
             />
           </div>
-          <Button variant="secondary" size="sm" onClick={() => void data.addMonth()}>
-            <Plus size={14} />
-            Ay əlavə et
-          </Button>
           <Button variant="secondary" size="sm" onClick={() => void exportCurrent()} data-testid="export-month">
             <Download size={14} />
             Bu ay

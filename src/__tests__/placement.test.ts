@@ -204,11 +204,12 @@ describe('payments & stats', () => {
   it('stats aggregate correctly', () => {
     const inst = [makeInstance({ id: 'a', paymentStatus: 'PAID' }), makeInstance({ id: 'b', paymentStatus: 'UNPAID' })]
     const stats = computeStats(inst, settings)
-    expect(stats.totalCourses).toBe(2)
+    // 2 instances × 4 days each = 8 courses
+    expect(stats.totalCourses).toBe(8)
     expect(stats.totalHours).toBe(64)
-    expect(stats.totalAmount).toBe(140)
-    expect(stats.paidAmount).toBe(70)
-    expect(stats.unpaidAmount).toBe(70)
+    expect(stats.totalAmount).toBe(560)
+    expect(stats.paidAmount).toBe(280)
+    expect(stats.unpaidAmount).toBe(280)
   })
 
   it('multiple teachers are computed separately', () => {

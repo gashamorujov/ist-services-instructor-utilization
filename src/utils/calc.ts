@@ -127,13 +127,14 @@ export function computeStats(instances: CourseInstance[], settings: Settings): D
   let pendingCount = 0
   for (const inst of instances) {
     const price = inst.price ?? settings.defaultCoursePrice
-    totalCourses += 1
+    const cellCount = Math.max(1, inst.days.length)
+    totalCourses += cellCount
     totalHours += inst.hours
-    totalAmount += price
-    if (inst.paymentStatus === 'PAID') paidAmount += price
+    totalAmount += price * cellCount
+    if (inst.paymentStatus === 'PAID') paidAmount += price * cellCount
     else {
-      unpaidAmount += price
-      pendingCount += 1
+      unpaidAmount += price * cellCount
+      pendingCount += cellCount
     }
   }
   return { totalCourses, totalHours, totalAmount, paidAmount, unpaidAmount, pendingCount }

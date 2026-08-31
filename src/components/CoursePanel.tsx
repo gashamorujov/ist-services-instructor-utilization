@@ -78,9 +78,7 @@ export function CoursePanel({
         <Field label="Kurs müddəti">
           <Input value={`${inst.durationDays} gün`} disabled />
         </Field>
-        <Field label="Saat">
-          <Input value={`${inst.hours} saat`} disabled />
-        </Field>
+
         <Field label="Otaq">
           <Input
             value={room}

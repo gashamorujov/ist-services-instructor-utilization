@@ -81,7 +81,7 @@ export function DashboardPage({ onOpenSchedule }: { onOpenSchedule: () => void }
                       <td className="px-4 py-2 text-slate-600">{inst.startDate}</td>
                       <td className="px-4 py-2 text-slate-600">{inst.endDate}</td>
                       <td className="px-4 py-2 text-center text-slate-600">{inst.hours}</td>
-                      <td className="px-4 py-2 text-right font-semibold text-slate-800">{inst.price ?? settings.defaultCoursePrice} AZN</td>
+                      <td className="px-4 py-2 text-right font-semibold text-slate-800">{(inst.price ?? settings.defaultCoursePrice) * Math.max(1, inst.days.length)} AZN</td>
                       <td className="px-4 py-2 text-center">
                         <span
                           className={`inline-flex rounded-md px-2 py-0.5 text-xs font-semibold ${

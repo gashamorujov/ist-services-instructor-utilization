@@ -99,11 +99,10 @@ export function Layout({
     return (
       <div className="flex h-full items-center justify-center bg-slate-100">
         <div className="text-center">
-          <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-brand-600 text-lg font-extrabold text-white">
-            IS
+          <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-brand-600 text-lg font-extrabold text-white animate-pulse">
+            IST
           </div>
-          <div className="h-8 w-48 animate-pulse rounded bg-slate-200" />
-          <p className="mt-3 text-sm text-slate-500">Məlumatlar yüklənir...</p>
+          <p className="text-sm font-medium text-slate-600">IST...</p>
         </div>
       </div>
     )
@@ -115,10 +114,10 @@ export function Layout({
       <aside className="hidden w-64 flex-col bg-slate-900 lg:flex">
         <div className="flex items-center gap-3 border-b border-slate-700/60 px-5 py-5">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-sm font-extrabold text-white">
-            IS
+            IST
           </div>
           <div>
-            <div className="text-sm font-bold text-white">IST Services</div>
+            <div className="text-sm font-bold text-white">Services</div>
             <div className="text-[11px] text-slate-400">Tədris yükünün idarəsi</div>
           </div>
         </div>
@@ -134,9 +133,9 @@ export function Layout({
             <div className="flex items-center justify-between border-b border-slate-700/60 px-5 py-5">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-sm font-extrabold text-white">
-                  IS
+                  IST
                 </div>
-                <span className="text-sm font-bold text-white">IST Services</span>
+                <span className="text-sm font-bold text-white">Services</span>
               </div>
               <button onClick={() => setDrawerOpen(false)} className="text-slate-300" aria-label="Bağla">
                 <X size={20} />
@@ -157,9 +156,9 @@ export function Layout({
           </button>
           <div className="flex items-center gap-2">
             <div className="flex h-7 w-7 items-center justify-center rounded-md bg-brand-600 text-xs font-extrabold text-white">
-              IS
+              IST
             </div>
-            <span className="text-sm font-bold text-slate-800">IST Services</span>
+            <span className="text-sm font-bold text-slate-800">Services</span>
           </div>
           <div className="w-8" />
         </div>
