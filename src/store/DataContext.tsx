@@ -54,6 +54,7 @@ type DataContextValue = DataState & {
   placeCourse: (monthId: string, teacherId: string, day: number, raw: string) => Promise<void>
   setCellX: (monthId: string, teacherId: string, day: number) => Promise<void>
   clearCell: (monthId: string, teacherId: string, day: number) => Promise<void>
+  updateCellLocation: (monthId: string, teacherId: string, day: number, location: 'Elmlər' | 'Ramana' | null) => Promise<void>
   deleteInstance: (instanceId: string) => Promise<void>
   deleteInstanceDay: (instanceId: string, date: string) => Promise<void>
   updateInstance: (instanceId: string, patch: Partial<CourseInstance>) => Promise<void>
@@ -495,6 +496,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const updateCellLocation = useCallback(
+    async (monthId: string, teacherId: string, day: number, location: 'Elmlər' | 'Ramana' | null) => {
+      const s = stateRef.current
+      const cell = s.cellsByMonth[monthId]?.[teacherId]?.[String(day)]
+      if (!cell) return
+      await set(ref(db, cellPath(monthId, teacherId, day)), { ...cell, location })
+    },
+    [],
+  )
+
 
   const deleteInstance = useCallback(
     async (instanceId: string) => {
@@ -691,6 +702,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       placeCourse,
       setCellX,
       clearCell,
+      updateCellLocation,
       deleteInstance,
       deleteInstanceDay,
       updateInstance,
@@ -723,7 +735,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       redo,
     }),
     [
-      state, activeMonthId, setActiveMonthId, placeCourse, setCellX, clearCell,
+      state, activeMonthId, setActiveMonthId, placeCourse, setCellX, clearCell, updateCellLocation,
       deleteInstance, deleteInstanceDay, updateInstance, addMonth, addMonthById, deleteMonth,
       trashMonth, restoreMonth, permanentDeleteMonth, purgeExpiredTrash,
       addTeacher, updateTeacher, deleteTeacher, addCourse, updateCourse, deleteCourse,

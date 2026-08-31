@@ -186,13 +186,13 @@ describe('payments & stats', () => {
     expect(pay[0]!.totalAmount).toBe(420)
   })
 
-  it('TEST 6/7 + color: PAID -> green, UNPAID stays default (black)', () => {
+  it('TEST 6/7 + color: PAID -> green, UNPAID -> red', () => {
     const paid = makeInstance({ id: 'ci_paid', paymentStatus: 'PAID' })
     const unpaid = makeInstance({ id: 'ci_unpaid', paymentStatus: 'UNPAID' })
     const cellPaid: CellValue = { value: 'SL', type: 'course', courseInstanceId: 'ci_paid' }
     const cellUnpaid: CellValue = { value: 'SL', type: 'course', courseInstanceId: 'ci_unpaid' }
     expect(cellColor(cellPaid, paid, settings.colors)).toBe('#008000')
-    expect(cellColor(cellUnpaid, unpaid, settings.colors)).toBe('#000000')
+    expect(cellColor(cellUnpaid, unpaid, settings.colors)).toBe('#FF0000')
   })
 
   it('XS manual price is used instead of default', () => {

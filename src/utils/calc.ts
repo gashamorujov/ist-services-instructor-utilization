@@ -34,11 +34,10 @@ export function cellColor(
   if (isCourseCell(cell)) {
     const status = instance?.paymentStatus ?? 'DEFAULT'
     if (status === 'PAID') return colors.paid
-    // UNPAID cells stay visually neutral (same as other cells)
+    if (status === 'UNPAID') return colors.unpaid
     return colors.default
   }
   if (isX(cell)) return '#e2e8f0'
-  // XS / standalone course value that has no resolved instance yet
   return colors.default
 }
 

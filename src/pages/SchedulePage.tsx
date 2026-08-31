@@ -159,11 +159,10 @@ export function SchedulePage() {
   }
 
   const handleLocation = async (loc: 'Elmlər' | 'Ramana') => {
-    if (!ctxMenu) return
+    if (!ctxMenu || !currentMonth) return
     const cell = monthCells[ctxMenu.teacherId]?.[String(ctxMenu.day)]
-    const instanceId = cell?.courseInstanceId
-    if (!instanceId) return
-    await data.updateInstance(instanceId, { location: loc })
+    if (!cell?.courseInstanceId) return
+    await data.updateCellLocation(currentMonth.id, ctxMenu.teacherId, ctxMenu.day, loc)
     setCtxMenu(null)
   }
 
@@ -778,14 +777,18 @@ function Cell({
           style={{ color, minWidth: 52 }}
         >
           {cell?.value ?? ''}
-          {instance?.room && (
-            <span className="absolute bottom-0 right-0 rounded-tl bg-slate-200 px-1 text-[9px] font-normal text-slate-600">
-              {instance.room}
+          {/* Location indicator: R or E in top-right */}
+          {cell?.location && (
+            <span
+              className="absolute right-0 top-0 z-10 flex h-3.5 w-3.5 items-center justify-center rounded-bl bg-slate-700 text-[7px] font-bold leading-none text-white"
+            >
+              {cell.location === 'Ramana' ? 'R' : 'E'}
             </span>
           )}
-          {instance?.location && (
-            <span className="absolute left-0 top-0 rounded-br bg-slate-200 px-1 text-[9px] font-normal text-slate-600">
-              {instance.location}
+          {/* Room indicator: bottom-right, adjacent to borders */}
+          {instance?.room && (
+            <span className="absolute bottom-0 right-0 z-10 rounded-tl bg-slate-200 px-[3px] text-[8px] font-medium leading-tight text-slate-700">
+              {instance.room}
             </span>
           )}
         </div>

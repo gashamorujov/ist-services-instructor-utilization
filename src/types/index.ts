@@ -6,6 +6,7 @@ export type CellValue = {
   value: string
   type: CellType
   courseInstanceId: string | null
+  location?: 'Elmlər' | 'Ramana' | null
 }
 
 export type Course = {

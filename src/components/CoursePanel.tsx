@@ -17,7 +17,7 @@ export function CoursePanel({
   const [room, setRoom] = useState(inst?.room ?? '')
   const [status, setStatus] = useState<PaymentStatus>(inst?.paymentStatus ?? 'DEFAULT')
   const [price, setPrice] = useState(inst?.price != null ? String(inst.price) : '')
-  const [location, setLocation] = useState<'Elmlər' | 'Ramana' | null>(inst?.location ?? null)
+
 
   if (!inst) {
     return (
@@ -28,13 +28,13 @@ export function CoursePanel({
   }
 
   const isXS = course?.code === 'XS' || course?.specialRule === 'XS'
-  const isSLO = course?.code === 'SL' || course?.code === 'SO'
+
   const displayPrice = (inst.price ?? settings.defaultCoursePrice)?.toFixed(2).replace(/\.00$/, '') + ' AZN'
 
   const save = async () => {
     const patch: Partial<CourseInstance> = { paymentStatus: status }
     patch.room = room.trim() !== '' ? room.trim() : null
-    if (isSLO) patch.location = location
+
     if (isXS) {
       const p = parseFloat(price)
       patch.price = Number.isFinite(p) && p >= 0 ? p : null
@@ -92,18 +92,7 @@ export function CoursePanel({
             ))}
           </datalist>
         </Field>
-        {isSLO && (
-          <Field label="Keçirilmə yeri">
-            <div className="flex gap-2">
-              <Button variant={location === 'Elmlər' ? 'primary' : 'secondary'} onClick={() => setLocation('Elmlər')}>
-                Elmlər
-              </Button>
-              <Button variant={location === 'Ramana' ? 'primary' : 'secondary'} onClick={() => setLocation('Ramana')}>
-                Ramana
-              </Button>
-            </div>
-          </Field>
-        )}
+
         <Field label="Ödəniş statusu">
           <Select value={status} onChange={(e) => setStatus(e.target.value as PaymentStatus)}>
             <option value="DEFAULT">Müəyyən edilməyib</option>
