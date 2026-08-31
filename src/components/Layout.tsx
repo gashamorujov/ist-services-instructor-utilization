@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   LayoutDashboard,
@@ -10,10 +10,12 @@ import {
   Settings,
   Menu,
   X,
-  LogOut,
   Shield,
+  Undo2,
+  Redo2,
 } from 'lucide-react'
 import { useAuth } from '../store/AuthContext'
+import { useData } from '../store/DataContext'
 
 type NavItem = { key: string; label: string; icon: ReactNode }
 
@@ -37,12 +39,27 @@ export function Layout({
   children: ReactNode
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const { session, isAdmin, signOut } = useAuth()
+  const { session, isAdmin } = useAuth()
+  const { canUndo, canRedo, undo, redo } = useData()
 
   const handleNav = (key: string) => {
     onNavigate(key)
     setDrawerOpen(false)
   }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault()
+        void undo()
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault()
+        void redo()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [undo, redo])
 
   const nav = (
     <nav className="flex-1 space-y-1 px-3 py-4">
@@ -72,13 +89,7 @@ export function Layout({
       <div className="mb-3 text-xs text-slate-400">
         {isAdmin ? 'Administrator' : 'İstifadəçi'}
       </div>
-      <button
-        onClick={signOut}
-        className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-300 hover:bg-slate-700/60 hover:text-white"
-      >
-        <LogOut size={16} />
-        Çıxış
-      </button>
+      <div className="text-xs text-slate-500">Bütün səlahiyyətlər açıqdır</div>
     </div>
   )
 
@@ -135,6 +146,27 @@ export function Layout({
             <span className="text-sm font-bold text-slate-800">IST Services</span>
           </div>
           <div className="w-8" />
+        </div>
+        {/* Undo / Redo toolbar */}
+        <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2">
+          <button
+            onClick={() => void undo()}
+            disabled={!canUndo}
+            title="Geri qaytar (Ctrl+Z)"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Undo2 size={16} />
+            Geri
+          </button>
+          <button
+            onClick={() => void redo()}
+            disabled={!canRedo}
+            title="İrəli (Ctrl+Y)"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Redo2 size={16} />
+            İrəli
+          </button>
         </div>
         <main className="min-w-0 flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>
       </div>

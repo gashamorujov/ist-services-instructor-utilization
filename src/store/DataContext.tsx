@@ -72,6 +72,10 @@ type DataContextValue = DataState & {
   toast: (msg: string, type?: 'success' | 'error') => void
   notifyError: (msg: string) => void
   online: boolean
+  canUndo: boolean
+  canRedo: boolean
+  undo: () => Promise<void>
+  redo: () => Promise<void>
 }
 
 const DataContext = createContext<DataContextValue | null>(null)
@@ -124,6 +128,68 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const setActiveMonthId = useCallback((id: string) => {
     activeRef.current = id
     setActiveMonthIdState(id)
+  }, [])
+
+  // ---- Undo / Redo history ----
+  const [historyTick, setHistoryTick] = useState(0)
+  const undoStackRef = useRef<{ label: string; before: Map<string, unknown>; after: Map<string, unknown> }[]>([])
+  const redoStackRef = useRef<{ label: string; before: Map<string, unknown>; after: Map<string, unknown> }[]>([])
+
+  const recordHistory = useCallback(
+    async (label: string, paths: string[], run: () => Promise<void>) => {
+      const read = async (p: string): Promise<unknown> => {
+        try {
+          const snap = await get(ref(db, p))
+          return snap.val() ?? null
+        } catch {
+          return undefined
+        }
+      }
+      const before = new Map<string, unknown>()
+      for (const p of paths) before.set(p, await read(p))
+      await run()
+      const after = new Map<string, unknown>()
+      for (const p of paths) after.set(p, await read(p))
+      undoStackRef.current = [{ label, before, after }, ...undoStackRef.current].slice(0, 50)
+      redoStackRef.current = []
+      setHistoryTick((t) => t + 1)
+    },
+    [],
+  )
+
+  const performWrite = useCallback(
+    async (writes: WriteEntry[], label: string) => {
+      if (writes.length === 0) return
+      const paths = writes.map((w) => w.path)
+      await recordHistory(label, paths, () => applyWrites(writes))
+    },
+    [recordHistory],
+  )
+
+  const undo = useCallback(async () => {
+    const action = undoStackRef.current[0]
+    if (!action) return
+    undoStackRef.current = undoStackRef.current.slice(1)
+    redoStackRef.current = [{ label: action.label, before: action.before, after: action.after }, ...redoStackRef.current].slice(0, 50)
+    const payload: Record<string, unknown> = {}
+    action.before.forEach((v, p) => {
+      payload[p] = v
+    })
+    await update(ref(db), payload)
+    setHistoryTick((t) => t + 1)
+  }, [])
+
+  const redo = useCallback(async () => {
+    const action = redoStackRef.current[0]
+    if (!action) return
+    redoStackRef.current = redoStackRef.current.slice(1)
+    undoStackRef.current = [{ label: action.label, before: action.before, after: action.after }, ...undoStackRef.current].slice(0, 50)
+    const payload: Record<string, unknown> = {}
+    action.after.forEach((v, p) => {
+      payload[p] = v
+    })
+    await update(ref(db), payload)
+    setHistoryTick((t) => t + 1)
   }, [])
 
   // Base subscriptions
@@ -255,7 +321,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       // X code
       if (trimmed === 'X') {
-        await applyWrites([{ path: cellPath(monthId, teacherId, day), value: { value: 'X', type: 'x', courseInstanceId: null } }])
+        await performWrite([{ path: cellPath(monthId, teacherId, day), value: { value: 'X', type: 'x', courseInstanceId: null } }], 'X qeydi')
         toast('Qeyd edildi')
         return
       }
@@ -297,10 +363,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
           price,
           days: [date],
         }
-        await applyWrites([
-          { path: `courseInstances/${instanceId}`, value: inst },
-          { path: cellPath(monthId, teacherId, day), value: { value: 'XS', type: 'course', courseInstanceId: instanceId } },
-        ])
+        await performWrite(
+          [
+            { path: `courseInstances/${instanceId}`, value: inst },
+            { path: cellPath(monthId, teacherId, day), value: { value: 'XS', type: 'course', courseInstanceId: instanceId } },
+          ],
+          'XS kursu',
+        )
         toast('XS kursu \u0259lav\u0259 edildi')
         return
       }
@@ -391,7 +460,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             for (const [instId, dates] of extra) {
               cleanupWrites = removeDaysFromInstance(instId, dates, cleanupWrites)
             }
-            await applyWrites([...overwriteResult.writes, ...cleanupWrites])
+            await performWrite([...overwriteResult.writes, ...cleanupWrites], 'Kurs əlavə edildi (üstə yazıldı)')
             toast('Kurs əlavə edildi')
           } else {
             const inst: CourseInstance = {
@@ -416,7 +485,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               { path: cellPath(monthId, teacherId, day), value: { value: course.code, type: 'course', courseInstanceId: instanceId } },
             ]
             if (prevInst) writes = removeDaysFromInstance(prevInst.id, [dateKey(y, m, day)], writes)
-            await applyWrites(writes)
+            await performWrite(writes, 'Kurs əlavə edildi')
             toast('Kurs əlavə edildi')
           }
         }
@@ -437,12 +506,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const inst = writes[idx]!.value as CourseInstance
           writes[idx] = { ...writes[idx]!, value: { ...inst, price } }
         }
-        await applyWrites(writes)
+        await performWrite(writes, 'Kurs əlavə edildi')
         toast('Kurs əlavə edildi')
         return
       }
 
-      await applyWrites(result.writes)
+      await performWrite(result.writes, 'Kurs əlavə edildi')
       toast('Kurs əlavə edildi')
     },
     [toast, buildLookup],
@@ -450,15 +519,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const setCellX = useCallback(
     async (monthId: string, teacherId: string, day: number) => {
-      await applyWrites([{ path: cellPath(monthId, teacherId, day), value: { value: 'X', type: 'x', courseInstanceId: null } }])
+      await performWrite([{ path: cellPath(monthId, teacherId, day), value: { value: 'X', type: 'x', courseInstanceId: null } }], 'X qeydi')
       toast('Qeyd edildi')
     },
     [toast],
   )
 
   const clearCell = useCallback(async (monthId: string, teacherId: string, day: number) => {
-    await applyWrites([{ path: cellPath(monthId, teacherId, day), value: null }])
-  }, [])
+    await performWrite([{ path: cellPath(monthId, teacherId, day), value: null }], 'Xananı təmizlə')
+  }, [performWrite])
 
   const deleteInstance = useCallback(
     async (instanceId: string) => {
@@ -471,7 +540,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         writes.push({ path: cellPath(`${yy}-${pad(mm)}`, inst.teacherId, dd), value: null })
       }
       writes.push({ path: `courseInstances/${instanceId}`, value: null })
-      await applyWrites(writes)
+      await performWrite(writes, 'Kurs silindi')
       toast('Kurs silindi')
     },
     [toast],
@@ -481,16 +550,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
     async (instanceId: string, date: string) => {
       const inst = stateRef.current.courseInstances[instanceId]
       if (!inst) return
-      await applyWrites(removeDaysFromInstance(instanceId, [date]))
+      await performWrite(removeDaysFromInstance(instanceId, [date]), 'Gün silindi')
     },
-    [removeDaysFromInstance],
+    [removeDaysFromInstance, performWrite],
   )
 
   const updateInstance = useCallback(async (instanceId: string, patch: Partial<CourseInstance>) => {
     const inst = stateRef.current.courseInstances[instanceId]
     if (!inst) return
-    await applyWrites([{ path: `courseInstances/${instanceId}`, value: { ...inst, ...patch } }])
-  }, [])
+    await performWrite([{ path: `courseInstances/${instanceId}`, value: { ...inst, ...patch } }], 'Kurs məlumatı yeniləndi')
+  }, [performWrite])
 
   const addMonth = useCallback(async (): Promise<Month> => {
     const s = stateRef.current
@@ -615,12 +684,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
       toast,
       notifyError,
       online,
+      canUndo: undoStackRef.current.length > 0,
+      canRedo: redoStackRef.current.length > 0,
+      undo,
+      redo,
     }),
     [
       state, activeMonthId, setActiveMonthId, placeCourse, setCellX, clearCell,
       deleteInstance, deleteInstanceDay, updateInstance, addMonth, deleteMonth,
       addTeacher, updateTeacher, deleteTeacher, addCourse, updateCourse, deleteCourse,
       addRoom, updateRoom, deleteRoom, updateSettings, toast, notifyError, online,
+      undo, redo, historyTick,
     ],
   )
 

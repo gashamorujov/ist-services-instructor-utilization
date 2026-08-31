@@ -66,7 +66,9 @@ Rules əsas struktur:
 
 ### 3. Autentifikasiya
 
-Tətbiq demo giriş sistemi ilə işləyir (əsas səhifədə İstifadəçi növü seçin). Əsl Firebase Auth istifadə etmək üçün Firebase konsolunda Email/Password və ya Anonymous auth aktivləşdirilməli, sonra `src/services/auth.ts` faylında Firebase Auth -a keçid edilməlidir.
+Tətbiq **birbaşa giriş** ilə işləyir — istifadəçi/administrator seçimi tələb olunmur, bütün səlahiyyətlər açıqdır.
+Əsl Firebase Auth istifadə etmək üçün Firebase konsolunda Email/Password və ya Anonymous auth aktivləşdirilməli,
+sonra `src/services/auth.ts` faylında Firebase Auth-a keçid edilməlidir.
 
 ### 4. Deploy
 
@@ -165,6 +167,8 @@ cells/{monthId}/{teacherId}/{day} → { value, type, courseInstanceId }
 
 ## Əsas xüsusiyyətlər
 
+- **Birbaşa giriş**: Sayta daxil olan kimi bütün səlahiyyətlərlə (admin) işləyir, login ekranı yoxdur
+- **Undo / Redo**: Yuxarıdakı "Geri"/"İrəli" düymələri və Ctrl+Z / Ctrl+Y — istənilən əməliyyatı geri qaytarır
 - **Avtomatik yayılma**: Kurs kodu yazıldıqda müddəti qədər avtomatik növbəti xanalara yayılır
 - **Ay arası yayılma**: Kurs ay sonunda başlayarsa növbəti ayda davam edir
 - **CourseInstance**: Eyni kursun bütün xanaları eyni instance ilə bağlıdır
@@ -172,7 +176,11 @@ cells/{monthId}/{teacherId}/{day} → { value, type, courseInstanceId }
 - **X qeydi**: Müəllimin həmin gün dərs keçə bilməyəcəyini göstərir
 - **Otaq sistemi**: Double-click ilə təyin olunur, bütün xanalarda görünür
 - **Elmlər/Ramana**: Yalnız SL/SO kursları üçün sağ klik menyusu
-- **Ödəniş sistemi**: PAID/UNPAID statusu rəng dəyişimi (yaşıl/qırmızı)
+- **Ödəniş sistemi**: Yeni kurs əlavə edildikdə avtomatik cədvəlin altındakı "Müəllimlərin ödənişləri"
+  bölməsində (aktiv/ödənilməyən) görünür; "Ödənilib" edildikdə oradan çıxıb Ödənişlər səhifəsində
+  müəllimin ödənilmiş məbləğinə əlavə olunur
+- **Neytral rəng**: Ödənilməmiş kurs xanaları digər xanalar kimi qara rəngdə görünür (qırmızı deyil);
+  ödənilmiş kurslar yaşıl rəngdə göstərilir
 - **Aylar arası keçid**: Tab başlığı ilə, "+" ilə yeni ay əlavə etmə
 - **Excel export**: Rəsmi format, rənglər, sütun ölçüləri, print area
 - **Realtime sync**: Eyni anda bir neçə browser açıq olanda məlumatlar sinxron işləyir

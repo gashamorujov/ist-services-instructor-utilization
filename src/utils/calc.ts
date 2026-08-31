@@ -34,7 +34,7 @@ export function cellColor(
   if (isCourseCell(cell)) {
     const status = instance?.paymentStatus ?? 'DEFAULT'
     if (status === 'PAID') return colors.paid
-    if (status === 'UNPAID') return colors.unpaid
+    // UNPAID cells stay visually neutral (same as other cells)
     return colors.default
   }
   if (isX(cell)) return '#e2e8f0'
@@ -79,6 +79,32 @@ export function computePayments(
   return Array.from(map.values())
     .filter((r) => activeIds.has(r.teacherId))
     .map((r) => ({ ...r }))
+}
+
+/** Active (unpaid / pending) payments per teacher — shown under the schedule. */
+export function computeActivePayments(
+  instances: CourseInstance[],
+  teachers: Teacher[],
+  settings: Settings,
+): PaymentRow[] {
+  return computePayments(
+    instances.filter((i) => i.paymentStatus !== 'PAID'),
+    teachers,
+    settings,
+  )
+}
+
+/** Paid payments per teacher — shown in the Ödənişlər page. */
+export function computePaidPayments(
+  instances: CourseInstance[],
+  teachers: Teacher[],
+  settings: Settings,
+): PaymentRow[] {
+  return computePayments(
+    instances.filter((i) => i.paymentStatus === 'PAID'),
+    teachers,
+    settings,
+  )
 }
 
 export type DashboardStats = {

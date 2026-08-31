@@ -4,7 +4,7 @@ import { Download, DownloadCloud, Plus, Search, Trash2 } from 'lucide-react'
 import { useData } from '../store/DataContext'
 import { CoursePanel } from '../components/CoursePanel'
 import { Badge, Button, ConfirmDialog, EmptyState } from '../components/ui'
-import { computePayments, paymentRowStatus, cellColor, cellTooltip } from '../utils/calc'
+import { computeActivePayments, paymentRowStatus, cellColor, cellTooltip } from '../utils/calc'
 import { dateKey, formatDateAZ, weekdayOf } from '../utils/dates'
 import type { CellValue, Course, CourseInstance, Month, Settings } from '../types'
 
@@ -41,7 +41,7 @@ export function SchedulePage() {
   }, [courseInstances, currentMonth])
 
   const payments = useMemo(
-    () => computePayments(monthInstances, activeTeachers, settings),
+    () => computeActivePayments(monthInstances, activeTeachers, settings),
     [monthInstances, activeTeachers, settings],
   )
 
@@ -368,7 +368,7 @@ export function SchedulePage() {
             <h2 className="text-sm font-bold text-slate-800">Müəllimlərin ödənişləri</h2>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" data-testid="active-payments">
               <thead>
                 <tr className="bg-slate-50 text-left text-xs font-bold text-slate-600">
                   <th className="px-4 py-2">Müəllim</th>
