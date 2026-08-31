@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
+  base: '/ist-services-instructor-utilization/',
   plugins: [react(), tailwindcss()],
   test: {
     environment: 'node',
