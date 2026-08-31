@@ -1,0 +1,63 @@
+{
+  "rules": {
+    ".read": "auth != null",
+    ".write": "auth != null && auth.token.admin === true",
+
+    "teachers": {
+      ".read": "auth != null",
+      ".write": "auth != null && auth.token.admin === true",
+      "$teacherId": {
+        ".validate": "newData.hasChildren(['id','fullName','order','active']) && newData.child('fullName').isString() && newData.child('active').isBoolean()"
+      }
+    },
+
+    "courses": {
+      ".read": "auth != null",
+      ".write": "auth != null && auth.token.admin === true",
+      "$courseId": {
+        ".validate": "newData.hasChildren(['id','code','name','hours','durationDays','active']) && newData.child('hours').isNumber() && newData.child('active').isBoolean()"
+      }
+    },
+
+    "months": {
+      ".read": "auth != null",
+      ".write": "auth != null && auth.token.admin === true",
+      "$monthId": {
+        ".validate": "newData.hasChildren(['id','year','month','name']) && newData.child('year').isNumber() && newData.child('month').isNumber()"
+      }
+    },
+
+    "rooms": {
+      ".read": "auth != null",
+      ".write": "auth != null && auth.token.admin === true",
+      "$roomId": {
+        ".validate": "newData.hasChildren(['id','name']) && newData.child('name').isString()"
+      }
+    },
+
+    "settings": {
+      ".read": "auth != null",
+      ".write": "auth != null && auth.token.admin === true"
+    },
+
+    "courseInstances": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$instanceId": {
+        ".validate": "newData.hasChildren(['id','code','monthId','teacherId','startDate','endDate','hours','durationDays','paymentStatus']) && newData.child('hours').isNumber() && newData.child('teacherId').isString()"
+      }
+    },
+
+    "cells": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$monthId": {
+        "$teacherId": {
+          "$day": {
+            ".validate": "newData.isObject() && newData.hasChildren(['value','type']) && newData.child('value').isString()"
+          }
+        }
+      }
+    }
+  }
+}
