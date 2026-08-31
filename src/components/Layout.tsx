@@ -13,6 +13,7 @@ import {
   Shield,
   Undo2,
   Redo2,
+  Archive,
 } from 'lucide-react'
 import { useAuth } from '../store/AuthContext'
 import { useData } from '../store/DataContext'
@@ -26,6 +27,7 @@ const NAV: NavItem[] = [
   { key: 'courses', label: 'Kurslar', icon: <BookOpen size={18} /> },
   { key: 'payments', label: 'Ödənişlər', icon: <Wallet size={18} /> },
   { key: 'months', label: 'Aylar', icon: <CalendarRange size={18} /> },
+  { key: 'archive', label: 'Arxiv', icon: <Archive size={18} /> },
   { key: 'settings', label: 'Parametrlər', icon: <Settings size={18} /> },
 ]
 

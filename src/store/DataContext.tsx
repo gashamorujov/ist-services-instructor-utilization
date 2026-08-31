@@ -17,12 +17,11 @@ import {
   cellLookupKey,
   cellPath,
   newInstanceId,
-  type WriteEntry,
 } from '../services/courseService'
-import { dateKey, nextMonth } from '../utils/dates'
+import { nextMonth } from '../utils/dates'
 import { genId } from '../utils/id'
-import { INITIAL_COURSES, INITIAL_ROOMS, INITIAL_TEACHERS } from '../utils/seed'
 import type {
+  ArchivedYear,
   CellValue,
   Course,
   CourseInstance,
@@ -41,6 +40,7 @@ type DataState = {
   rooms: Record<string, Room>
   courseInstances: Record<string, CourseInstance>
   cellsByMonth: Record<string, Record<string, Record<string, CellValue>>>
+  archives: Record<string, ArchivedYear>
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -58,7 +58,12 @@ type DataContextValue = DataState & {
   deleteInstanceDay: (instanceId: string, date: string) => Promise<void>
   updateInstance: (instanceId: string, patch: Partial<CourseInstance>) => Promise<void>
   addMonth: () => Promise<Month>
+  addMonthById: (year: number, month: number) => Promise<Month | null>
   deleteMonth: (monthId: string) => Promise<void>
+  trashMonth: (monthId: string) => Promise<void>
+  restoreMonth: (monthId: string) => Promise<void>
+  permanentDeleteMonth: (monthId: string) => Promise<void>
+  purgeExpiredTrash: () => Promise<void>
   addTeacher: (fullName: string) => Promise<void>
   updateTeacher: (id: string, patch: Partial<Teacher>) => Promise<void>
   deleteTeacher: (id: string) => Promise<void>
@@ -69,6 +74,9 @@ type DataContextValue = DataState & {
   updateRoom: (id: string, name: string) => Promise<void>
   deleteRoom: (id: string) => Promise<void>
   updateSettings: (patch: Partial<Settings>) => Promise<void>
+  deleteTeacherPayments: (teacherId: string, monthId: string) => Promise<void>
+  addArchive: (year: number, months: Record<string, Month>) => Promise<void>
+  deleteArchive: (archiveId: string) => Promise<void>
   toast: (msg: string, type?: 'success' | 'error') => void
   notifyError: (msg: string) => void
   online: boolean
@@ -109,6 +117,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     rooms: {},
     courseInstances: {},
     cellsByMonth: {},
+    archives: {},
   })
   const [activeMonthId, setActiveMonthIdState] = useState<string | null>(null)
   const [toasts, setToasts] = useState<{ id: number; msg: string; type: 'success' | 'error' }[]>([])
@@ -150,456 +159,456 @@ export function DataProvider({ children }: { children: ReactNode }) {
       await run()
       const after = new Map<string, unknown>()
       for (const p of paths) after.set(p, await read(p))
-      undoStackRef.current = [{ label, before, after }, ...undoStackRef.current].slice(0, 50)
+      undoStackRef.current.push({ label, before, after })
+      if (undoStackRef.current.length > 50) undoStackRef.current.shift()
       redoStackRef.current = []
       setHistoryTick((t) => t + 1)
     },
     [],
   )
 
-  const performWrite = useCallback(
-    async (writes: WriteEntry[], label: string) => {
-      if (writes.length === 0) return
-      const paths = writes.map((w) => w.path)
-      await recordHistory(label, paths, () => applyWrites(writes))
-    },
-    [recordHistory],
-  )
-
   const undo = useCallback(async () => {
-    const action = undoStackRef.current[0]
-    if (!action) return
-    undoStackRef.current = undoStackRef.current.slice(1)
-    redoStackRef.current = [{ label: action.label, before: action.before, after: action.after }, ...redoStackRef.current].slice(0, 50)
+    const entry = undoStackRef.current.pop()
+    if (!entry) return
     const payload: Record<string, unknown> = {}
-    action.before.forEach((v, p) => {
-      payload[p] = v
-    })
+    for (const [p, v] of entry.before) payload[p] = v ?? null
     await update(ref(db), payload)
+    redoStackRef.current.push(entry)
     setHistoryTick((t) => t + 1)
-  }, [])
+    toast('Geri qaytarıldı')
+  }, [toast])
 
   const redo = useCallback(async () => {
-    const action = redoStackRef.current[0]
-    if (!action) return
-    redoStackRef.current = redoStackRef.current.slice(1)
-    undoStackRef.current = [{ label: action.label, before: action.before, after: action.after }, ...undoStackRef.current].slice(0, 50)
+    const entry = redoStackRef.current.pop()
+    if (!entry) return
     const payload: Record<string, unknown> = {}
-    action.after.forEach((v, p) => {
-      payload[p] = v
-    })
+    for (const [p, v] of entry.after) payload[p] = v ?? null
     await update(ref(db), payload)
+    undoStackRef.current.push(entry)
     setHistoryTick((t) => t + 1)
-  }, [])
+    toast('İrəli aparıldı')
+  }, [toast])
 
-  // Base subscriptions
+  // ---- Firebase subscriptions ----
   useEffect(() => {
     const unsubs: (() => void)[] = []
-    unsubs.push(subscribe<Record<string, Course>>('courses', (courses) => setState((s) => ({ ...s, courses: courses ?? {} }))))
-    unsubs.push(subscribe<Record<string, Teacher>>('teachers', (teachers) => setState((s) => ({ ...s, teachers: teachers ?? {} }))))
-    unsubs.push(subscribe<Record<string, Month>>('months', (months) => {
-      const m = months ?? {}
-      setState((s) => ({ ...s, months: m }))
-      if (!activeRef.current) {
-        const id = m['2026-09'] ? '2026-09' : Object.keys(m).sort()[0]
-        if (id) {
-          activeRef.current = id
-          setActiveMonthIdState(id)
+    unsubs.push(subscribe<Record<string, Teacher>>('teachers', (d) => {
+      setState((s) => ({ ...s, teachers: d ?? {} }))
+    }))
+    unsubs.push(subscribe<Record<string, Course>>('courses', (d) => {
+      setState((s) => ({ ...s, courses: d ?? {} }))
+    }))
+    unsubs.push(subscribe<Record<string, Month>>('months', (d) => {
+      setState((s) => {
+        const months = d ?? {}
+        // Auto-select first active (non-trashed) month
+        const active = Object.values(months).filter((m) => !m.deletedAt).sort((a, b) => a.id.localeCompare(b.id))
+        const activeId = active[0]?.id ?? null
+        if (!activeRef.current || !months[activeRef.current] || months[activeRef.current].deletedAt) {
+          if (activeId) {
+            activeRef.current = activeId
+            setActiveMonthIdState(activeId)
+          }
         }
-      }
-    }))
-    unsubs.push(subscribe<Record<string, Room>>('rooms', (rooms) => setState((s) => ({ ...s, rooms: rooms ?? {} }))))
-    unsubs.push(subscribe<Record<string, CourseInstance>>('courseInstances', (instances) => setState((s) => ({ ...s, courseInstances: instances ?? {} }))))
-    unsubs.push(subscribe<Settings>('settings', (settings) => {
-      if (settings) {
-        setState((s) => ({
-          ...s,
-          settings: {
-            defaultCoursePrice: settings.defaultCoursePrice ?? 70,
-            colors: settings.colors ?? DEFAULT_SETTINGS.colors,
-          },
-          loading: false,
-        }))
-      } else {
-        setState((s) => ({ ...s, loading: false, settings: DEFAULT_SETTINGS }))
-      }
-    }))
-    return () => unsubs.forEach((u) => u())
-  }, [])
-
-  // Cells subscription bound to active month
-  useEffect(() => {
-    if (!activeMonthId) return
-    const un = subscribe<Record<string, Record<string, CellValue>>>(`cells/${activeMonthId}`, (cells) => {
-      const month = activeRef.current
-      if (!month) return
-      setState((s) => ({ ...s, cellsByMonth: { ...s.cellsByMonth, [month]: cells ?? {} } }))
-    })
-    return () => un()
-  }, [activeMonthId])
-
-  // Seed database once when the initial load completes and the DB is empty.
-  const seedAttempted = useRef(false)
-  useEffect(() => {
-    if (seedAttempted.current || state.loading) return
-    if (Object.keys(state.teachers).length === 0 && Object.keys(state.courses).length === 0) {
-      seedAttempted.current = true
-      seedDatabase(toast).catch(() => {
-        seedAttempted.current = false
+        return { ...s, months, loading: false }
       })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.loading, state.teachers, state.courses])
+    }))
+    unsubs.push(subscribe<Record<string, Room>>('rooms', (d) => {
+      setState((s) => ({ ...s, rooms: d ?? {} }))
+    }))
+    unsubs.push(subscribe<Record<string, CourseInstance>>('courseInstances', (d) => {
+      setState((s) => ({ ...s, courseInstances: d ?? {} }))
+    }))
+    unsubs.push(subscribe<Record<string, Record<string, Record<string, CellValue>>>>('cells', (d) => {
+      setState((s) => ({ ...s, cellsByMonth: d ?? {} }))
+    }))
+    unsubs.push(subscribe<Settings>('settings', (d) => {
+      setState((s) => ({ ...s, settings: d ?? DEFAULT_SETTINGS }))
+    }))
+    unsubs.push(subscribe<Record<string, ArchivedYear>>('archives', (d) => {
+      setState((s) => ({ ...s, archives: d ?? {} }))
+    }))
 
-  // online/offline
-  useEffect(() => {
-    const up = () => setOnline(true)
-    const down = () => {
-      setOnline(false)
-      notifyError('İnternet əlaqəsi kəsildi. Məlumat sinxroniyası dayandırılıb.')
-    }
-    const onErr = () => notifyError('Məlumat yadda saxlanılarkən xəta baş verdi. Yenidən cəhd edin.')
-    window.addEventListener('online', up)
-    window.addEventListener('offline', down)
-    window.addEventListener('firebase-error', onErr)
+    const onOnline = () => setOnline(true)
+    const onOffline = () => setOnline(false)
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    window.addEventListener('firebase-error', () => {
+      notifyError('Firebase bağlantısı kəsildi')
+    })
+
     return () => {
-      window.removeEventListener('online', up)
-      window.removeEventListener('offline', down)
-      window.removeEventListener('firebase-error', onErr)
+      unsubs.forEach((u) => u())
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
     }
   }, [notifyError])
 
-  const buildLookup = useCallback((monthId: string) => {
-    const s = stateRef.current
-    const lookup = new Map<string, CellValue>()
-    const addCells = (mId: string) => {
-      const cells = s.cellsByMonth[mId] ?? {}
-      for (const tid of Object.keys(cells)) {
-        for (const dKey of Object.keys(cells[tid] ?? {})) {
-          const c = cells[tid]?.[dKey]
-          if (c) lookup.set(cellLookupKey(mId, tid, Number(dKey)), c)
+  // ---- Auto-purge expired trash (24 hours) ----
+  useEffect(() => {
+    const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000
+    const purge = async () => {
+      const now = Date.now()
+      const months = stateRef.current.months
+      for (const m of Object.values(months)) {
+        if (m.deletedAt && now - m.deletedAt >= TWENTY_FOUR_HOURS) {
+          await permanentDeleteMonthInternal(m.id)
         }
       }
     }
-    addCells(monthId)
-    const [y, m] = monthId.split('-').map(Number)
-    const nm = nextMonth(y, m)
-    const nextMonthId = `${nm.year}-${pad(nm.month)}`
-    addCells(nextMonthId)
-    return { lookup, nextMonthId }
+    purge()
+    const interval = setInterval(purge, 60 * 1000) // check every minute
+    return () => clearInterval(interval)
   }, [])
 
+  // ---- Month helpers ----
+  const addMonth = useCallback(async (): Promise<Month> => {
+    const s = stateRef.current
+    const existing = Object.values(s.months).filter((m) => !m.deletedAt)
+    let year = new Date().getFullYear()
+    let month = new Date().getMonth() + 1
+    if (existing.length > 0) {
+      const sorted = existing.sort((a, b) => b.id.localeCompare(a.id))
+      const last = sorted[0]!
+      const nm = nextMonth(last.year, last.month)
+      year = nm.year
+      month = nm.month
+    }
+    const id = `${year}-${pad(month)}`
+    // Check if already exists (active or trashed)
+    if (s.months[id]) {
+      toast('Bu ay artıq mövcuddur.', 'error')
+      return s.months[id]!
+    }
+    const m: Month = { id, year, month, name: `${monthName(month)} ${year}`, createdAt: Date.now() }
+    await set(ref(db, `months/${id}`), m)
+    setActiveMonthId(id)
+    toast(`${m.name} yaradıldı`)
+    return m
+  }, [toast, setActiveMonthId])
 
-  const removeDaysFromInstance = (instanceId: string, dates: string[], extraWrites: WriteEntry[] = []) => {
-    const inst = stateRef.current.courseInstances[instanceId]
-    if (!inst) return extraWrites
-    const remaining = inst.days.filter((d) => !dates.includes(d))
-    const writes = [...extraWrites]
-    for (const date of dates) {
-      const [yy, mm, dd] = date.split('-').map(Number)
-      writes.push({ path: cellPath(`${yy}-${pad(mm)}`, inst.teacherId, dd), value: null })
+  const addMonthById = useCallback(async (year: number, month: number): Promise<Month | null> => {
+    const s = stateRef.current
+    const id = `${year}-${pad(month)}`
+    if (s.months[id]) {
+      toast('Bu ay artıq mövcuddur.', 'error')
+      return null
     }
-    if (remaining.length === 0) {
-      writes.push({ path: `courseInstances/${instanceId}`, value: null })
-    } else {
-      writes.push({
-        path: `courseInstances/${instanceId}`,
-        value: { ...inst, days: remaining, startDate: remaining[0], endDate: remaining[remaining.length - 1] },
-      })
+    const m: Month = { id, year, month, name: `${monthName(month)} ${year}`, createdAt: Date.now() }
+    await set(ref(db, `months/${id}`), m)
+    setActiveMonthId(id)
+    toast(`${m.name} yaradıldı`)
+    return m
+  }, [toast, setActiveMonthId])
+
+  const permanentDeleteMonthInternal = async (monthId: string) => {
+    await remove(ref(db, `months/${monthId}`))
+    await remove(ref(db, `cells/${monthId}`))
+    const payload: Record<string, unknown> = {}
+    for (const id of Object.keys(stateRef.current.courseInstances)) {
+      const inst = stateRef.current.courseInstances[id]
+      if (inst?.monthId === monthId) payload[`courseInstances/${id}`] = null
     }
-    return writes
+    if (Object.keys(payload).length) await update(ref(db), payload)
+    if (activeRef.current === monthId) {
+      const rest = Object.keys(stateRef.current.months)
+        .filter((k) => k !== monthId && !stateRef.current.months[k]?.deletedAt)
+        .sort()
+      const next = rest[0] ?? null
+      if (next) setActiveMonthId(next)
+    }
   }
 
+  const deleteMonth = useCallback(
+    async (monthId: string) => {
+      await recordHistory('Ay silindi', [`months/${monthId}`, `cells/${monthId}`], () =>
+        permanentDeleteMonthInternal(monthId),
+      )
+      toast('Ay silindi')
+    },
+    [toast, recordHistory],
+  )
+
+  const trashMonth = useCallback(
+    async (monthId: string) => {
+      const s = stateRef.current
+      const m = s.months[monthId]
+      if (!m) return
+      const patched: Month = { ...m, deletedAt: Date.now() }
+      await recordHistory('Ay zibil qutusuna köçürüldü', [`months/${monthId}`], async () => {
+        await set(ref(db, `months/${monthId}`), patched)
+      })
+      if (activeRef.current === monthId) {
+        const rest = Object.values(s.months)
+          .filter((x) => x.id !== monthId && !x.deletedAt)
+          .sort((a, b) => a.id.localeCompare(b.id))
+        if (rest[0]) setActiveMonthId(rest[0].id)
+      }
+      toast('Ay zibil qutusuna köçürüldü')
+    },
+    [toast, setActiveMonthId, recordHistory],
+  )
+
+  const restoreMonth = useCallback(
+    async (monthId: string) => {
+      const s = stateRef.current
+      const m = s.months[monthId]
+      if (!m) return
+      const patched: Month = { ...m, deletedAt: undefined }
+      await recordHistory('Ay bərpa edildi', [`months/${monthId}`], async () => {
+        await set(ref(db, `months/${monthId}`), patched)
+      })
+      setActiveMonthId(monthId)
+      toast('Ay bərpa edildi')
+    },
+    [toast, setActiveMonthId, recordHistory],
+  )
+
+  const permanentDeleteMonth = useCallback(
+    async (monthId: string) => {
+      await recordHistory('Ay həmişəlik silindi', [`months/${monthId}`, `cells/${monthId}`], () =>
+        permanentDeleteMonthInternal(monthId),
+      )
+      toast('Ay həmişəlik silindi')
+    },
+    [toast, recordHistory],
+  )
+
+  const purgeExpiredTrash = useCallback(async () => {
+    const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000
+    const now = Date.now()
+    const months = stateRef.current.months
+    for (const m of Object.values(months)) {
+      if (m.deletedAt && now - m.deletedAt >= TWENTY_FOUR_HOURS) {
+        await permanentDeleteMonthInternal(m.id)
+      }
+    }
+  }, [])
+
+  // ---- Place course (with next month support) ----
   const placeCourse = useCallback(
     async (monthId: string, teacherId: string, day: number, raw: string) => {
-      const trimmed = raw.trim().toUpperCase()
-      if (!trimmed) return
+      if (!raw || raw.trim() === '') return
+      const code = raw.trim().toUpperCase()
       const s = stateRef.current
-      const [y, m] = monthId.split('-').map(Number)
-      const dim = new Date(y, m, 0).getDate()
-      if (day < 1 || day > dim) return
-
-      // X code
-      if (trimmed === 'X') {
-        await performWrite([{ path: cellPath(monthId, teacherId, day), value: { value: 'X', type: 'x', courseInstanceId: null } }], 'X qeydi')
-        toast('Qeyd edildi')
-        return
-      }
-
-      // Avoid creating a duplicate when the cell already belongs to the same course+teacher.
-      const currentCell = stateRef.current.cellsByMonth[monthId]?.[teacherId]?.[String(day)]
-      if (currentCell?.value === trimmed && currentCell.courseInstanceId) {
-        const curInst = stateRef.current.courseInstances[currentCell.courseInstanceId]
-        if (curInst && curInst.teacherId === teacherId) {
-          toast(`Bu xanada art\u0131q ${trimmed} qeyd olunub.`)
-          return
-        }
-      }
-
-      const course = Object.values(s.courses).find((c) => c.code.toUpperCase() === trimmed && c.active)
-      if (!course && trimmed === 'XS') {
-        // XS special course: single day, manual price required.
-        const input = window.prompt('XS kursunun qiym\u0259tini daxil edin (AZN):', '')
-        if (input === null) return
-        const price = parseFloat(input)
-        if (!Number.isFinite(price) || price < 0) {
-          toast('D\u00fczg\u00fcn qiym\u0259t daxil edin.', 'error')
-          return
-        }
-        const instanceId = newInstanceId()
-        const date = dateKey(y, m, day)
-        const inst: CourseInstance = {
-          id: instanceId,
-          code: 'XS',
-          monthId,
-          teacherId,
-          startDate: date,
-          endDate: date,
-          hours: 8,
-          durationDays: 1,
-          room: null,
-          location: null,
-          paymentStatus: 'DEFAULT',
-          price,
-          days: [date],
-        }
-        await performWrite(
-          [
-            { path: `courseInstances/${instanceId}`, value: inst },
-            { path: cellPath(monthId, teacherId, day), value: { value: 'XS', type: 'course', courseInstanceId: instanceId } },
-          ],
-          'XS kursu',
-        )
-        toast('XS kursu \u0259lav\u0259 edildi')
-        return
-      }
+      const courses = Object.values(s.courses)
+      const course = courses.find((c) => c.code.toUpperCase() === code && c.active)
       if (!course) {
-        toast('Bu kurs kodu sistemd\u0259 m\u00f6vcud deyil.', 'error')
+        toast(`Kurs kodu tapılmadı: ${code}`, 'error')
         return
       }
-
-      const { lookup, nextMonthId } = buildLookup(monthId)
-      const willSpill = course.durationDays > dim - day + 1
-      const nextId = willSpill && s.months[nextMonthId] ? nextMonthId : null
-      if (nextId) {
-        try {
-          const snap = await get(ref(db, `cells/${nextId}`))
-          const remote = snap.val() as Record<string, Record<string, CellValue>> | null
-          if (remote) {
-            for (const tid of Object.keys(remote)) {
-              for (const dKey of Object.keys(remote[tid] ?? {})) {
-                const c = remote[tid]?.[dKey]
-                if (c) lookup.set(cellLookupKey(nextId, tid, Number(dKey)), c)
-              }
-            }
-          }
-        } catch {
-          // offline / rules deny — continue with local copy
-        }
+      const currentMonth = s.months[monthId]
+      if (!currentMonth) return
+      const nm = nextMonth(currentMonth.year, currentMonth.month)
+      const nextMonthId = `${nm.year}-${pad(nm.month)}`
+      const nextExists = !!s.months[nextMonthId] && !s.months[nextMonthId]?.deletedAt
+      const monthCells = s.cellsByMonth[monthId] ?? {}
+      const teacherCells = monthCells[teacherId] ?? {}
+      const existingCells = new Map<string, CellValue>()
+      for (const [dayStr, cell] of Object.entries(teacherCells)) {
+        existingCells.set(cellLookupKey(monthId, teacherId, Number(dayStr)), cell)
       }
-
-      const instanceId = newInstanceId()
-      const isXS = course.specialRule === 'XS' || course.code === 'XS'
-      const preserveKey = cellLookupKey(monthId, teacherId, day)
+      const coursePrice = course.specialRule === 'XS' ? course.price : undefined
+      const preserveCell = teacherCells[String(day)]
+      const preserveKey = preserveCell?.courseInstanceId
+        ? cellLookupKey(monthId, teacherId, day)
+        : null
       const result = buildPlacement({
-        month: { year: y, month: m },
+        month: currentMonth,
         teacherId,
         startDay: day,
         code: course.code,
         course,
-        instanceId,
-        existingCells: lookup,
-        nextMonthId: nextId,
-        coursePrice: undefined,
+        instanceId: newInstanceId(),
+        existingCells,
+        nextMonthId: nextExists ? nextMonthId : null,
+        coursePrice,
         preserveKey,
       })
-
       if (!result.ok) {
-        if (result.reason === 'invalid_code') {
-          toast('Bu kurs kodu sistemdə mövcud deyil.', 'error')
+        if (result.reason === 'occupied') {
+          const occupiedDays = result.occupiedDays.map((k) => k.day).join(', ')
+          toast(`Bu xanalar artıq doludur: ${occupiedDays}`, 'error')
         } else if (result.reason === 'beyond_month') {
-          toast('Kurs ayın sonundan kənara daşınır. Əvvəlcə növbəti ayı yaradın.', 'error')
+          toast('Kurs bu ayın sonunu keçir. Növbəti ayı əlavə edin.', 'error')
         } else {
-          const ok = window.confirm(
-            'Kursun davam etdiyi tarixlərdən bəziləri artıq məlumatla doldurulub. Davam etmək istəyirsiniz?',
-          )
-          if (!ok) return
-          const overwriteResult = buildPlacement({
-            month: { year: y, month: m },
-            teacherId,
-            startDay: day,
-            code: course.code,
-            course,
-            instanceId,
-            existingCells: new Map(),
-            nextMonthId: nextId,
-            coursePrice: undefined,
-            preserveKey,
-          })
-          if (overwriteResult.ok) {
-            // Clean up the days we are about to overwrite from their old instances
-            // so orphaned instances do not keep being counted in payments.
-            const extra = new Map<string, string[]>()
-            const clobberedDates = new Set<string>()
-            for (const ck of overwriteResult.cells) {
-              const key = cellLookupKey(ck.monthId, ck.teacherId, ck.day)
-              const prevInstId = lookup.get(key)?.courseInstanceId
-              const prevInst = prevInstId ? stateRef.current.courseInstances[prevInstId] : undefined
-              if (prevInst) {
-                const [yy, mm] = ck.monthId.split('-').map(Number)
-                const date = dateKey(yy, mm, ck.day)
-                if (!clobberedDates.has(date)) {
-                  clobberedDates.add(date)
-                  const list = extra.get(prevInst.id) ?? []
-                  list.push(date)
-                  extra.set(prevInst.id, list)
-                }
-              }
-            }
-            let cleanupWrites: WriteEntry[] = []
-            for (const [instId, dates] of extra) {
-              cleanupWrites = removeDaysFromInstance(instId, dates, cleanupWrites)
-            }
-            await performWrite([...overwriteResult.writes, ...cleanupWrites], 'Kurs əlavə edildi (üstə yazıldı)')
-            toast('Kurs əlavə edildi')
-          } else {
-            const inst: CourseInstance = {
-              id: instanceId,
-              code: course.code,
-              monthId,
-              teacherId,
-              startDate: dateKey(y, m, day),
-              endDate: dateKey(y, m, day),
-              hours: course.hours,
-              durationDays: 1,
-              room: null,
-              location: null,
-              paymentStatus: 'DEFAULT',
-              price: null,
-              days: [dateKey(y, m, day)],
-            }
-            const curInstId = stateRef.current.cellsByMonth[monthId]?.[teacherId]?.[String(day)]?.courseInstanceId
-            const prevInst = curInstId ? stateRef.current.courseInstances[curInstId] : undefined
-            let writes: WriteEntry[] = [
-              { path: `courseInstances/${instanceId}`, value: inst },
-              { path: cellPath(monthId, teacherId, day), value: { value: course.code, type: 'course', courseInstanceId: instanceId } },
-            ]
-            if (prevInst) writes = removeDaysFromInstance(prevInst.id, [dateKey(y, m, day)], writes)
-            await performWrite(writes, 'Kurs əlavə edildi')
-            toast('Kurs əlavə edildi')
-          }
+          toast('Yanlış kurs kodu', 'error')
         }
         return
       }
-
-      if (isXS) {
-        const input = window.prompt('XS kursunun qiymətini daxil edin (AZN):', '')
-        if (input === null) return
-        const price = parseFloat(input)
-        if (!Number.isFinite(price) || price < 0) {
-          toast('Düzgün qiymət daxil edin.', 'error')
-          return
-        }
-        const writes = result.writes.map((w) => ({ ...w }))
-        const idx = writes.findIndex((w) => w.path === `courseInstances/${instanceId}`)
-        if (idx >= 0) {
-          const inst = writes[idx]!.value as CourseInstance
-          writes[idx] = { ...writes[idx]!, value: { ...inst, price } }
-        }
-        await performWrite(writes, 'Kurs əlavə edildi')
-        toast('Kurs əlavə edildi')
-        return
+      // If this cell is part of an existing instance, delete the old instance first
+      if (preserveCell?.courseInstanceId) {
+        const oldInstId = preserveCell.courseInstanceId
+        await deleteInstanceInternal(oldInstId)
       }
-
-      await performWrite(result.writes, 'Kurs əlavə edildi')
-      toast('Kurs əlavə edildi')
+      await applyWrites(result.writes)
+      toast(`${course.code} kursu əlavə edildi`)
     },
-    [toast, buildLookup],
+    [toast],
   )
 
   const setCellX = useCallback(
     async (monthId: string, teacherId: string, day: number) => {
-      await performWrite([{ path: cellPath(monthId, teacherId, day), value: { value: 'X', type: 'x', courseInstanceId: null } }], 'X qeydi')
-      toast('Qeyd edildi')
+      await set(ref(db, cellPath(monthId, teacherId, day)), { value: 'X', type: 'x', courseInstanceId: null })
     },
-    [toast],
+    [],
   )
 
-  const clearCell = useCallback(async (monthId: string, teacherId: string, day: number) => {
-    await performWrite([{ path: cellPath(monthId, teacherId, day), value: null }], 'Xananı təmizlə')
-  }, [performWrite])
+  const clearCell = useCallback(
+    async (monthId: string, teacherId: string, day: number) => {
+      const s = stateRef.current
+      const cell = s.cellsByMonth[monthId]?.[teacherId]?.[String(day)]
+      if (cell?.courseInstanceId) {
+        await deleteInstanceInternal(cell.courseInstanceId)
+      } else {
+        await remove(ref(db, cellPath(monthId, teacherId, day)))
+      }
+    },
+    [],
+  )
+
+  const deleteInstanceInternal = async (instanceId: string) => {
+    const inst = stateRef.current.courseInstances[instanceId]
+    if (!inst) return
+    await remove(ref(db, `courseInstances/${instanceId}`))
+    const payload: Record<string, unknown> = {}
+    const monthCells = stateRef.current.cellsByMonth[inst.monthId] ?? {}
+    const teacherCells = monthCells[inst.teacherId] ?? {}
+    for (const [dayStr, cell] of Object.entries(teacherCells)) {
+      if (cell.courseInstanceId === instanceId) {
+        payload[cellPath(inst.monthId, inst.teacherId, Number(dayStr))] = null
+      }
+    }
+    if (Object.keys(payload).length > 0) await update(ref(db), payload)
+  }
 
   const deleteInstance = useCallback(
     async (instanceId: string) => {
-      const s = stateRef.current
-      const inst = s.courseInstances[instanceId]
-      if (!inst) return
-      const writes: WriteEntry[] = []
-      for (const date of inst.days) {
-        const [yy, mm, dd] = date.split('-').map(Number)
-        writes.push({ path: cellPath(`${yy}-${pad(mm)}`, inst.teacherId, dd), value: null })
-      }
-      writes.push({ path: `courseInstances/${instanceId}`, value: null })
-      await performWrite(writes, 'Kurs silindi')
+      await recordHistory('Kurs silindi', [`courseInstances/${instanceId}`], () =>
+        deleteInstanceInternal(instanceId),
+      )
       toast('Kurs silindi')
     },
-    [toast],
+    [toast, recordHistory],
   )
 
   const deleteInstanceDay = useCallback(
     async (instanceId: string, date: string) => {
-      const inst = stateRef.current.courseInstances[instanceId]
+      const s = stateRef.current
+      const inst = s.courseInstances[instanceId]
       if (!inst) return
-      await performWrite(removeDaysFromInstance(instanceId, [date]), 'Gün silindi')
+      const dayNum = Number(date.split('-')[2])
+      await remove(ref(db, cellPath(inst.monthId, inst.teacherId, dayNum)))
+      const newDays = inst.days.filter((d) => d !== date)
+      if (newDays.length === 0) {
+        await deleteInstanceInternal(instanceId)
+      } else {
+        const monthId = `${date.split('-')[0]}-${date.split('-')[1]}`
+        await set(ref(db, `courseInstances/${instanceId}/days`), newDays)
+        await set(ref(db, `courseInstances/${instanceId}/startDate`), newDays[0])
+        await set(ref(db, `courseInstances/${instanceId}/endDate`), newDays[newDays.length - 1])
+        await set(ref(db, `courseInstances/${instanceId}/monthId`), monthId)
+        await set(ref(db, `courseInstances/${instanceId}/durationDays`), newDays.length)
+      }
+      toast('Gün silindi')
     },
-    [removeDaysFromInstance, performWrite],
+    [toast],
   )
 
   const updateInstance = useCallback(async (instanceId: string, patch: Partial<CourseInstance>) => {
-    const inst = stateRef.current.courseInstances[instanceId]
-    if (!inst) return
-    await performWrite([{ path: `courseInstances/${instanceId}`, value: { ...inst, ...patch } }], 'Kurs məlumatı yeniləndi')
-  }, [performWrite])
+    const cur = stateRef.current.courseInstances[instanceId]
+    if (!cur) return
+    await set(ref(db, `courseInstances/${instanceId}`), { ...cur, ...patch })
+  }, [])
 
-  const addMonth = useCallback(async (): Promise<Month> => {
-    const s = stateRef.current
-    const ids = Object.keys(s.months).sort()
-    const lastId = ids[ids.length - 1] ?? '2026-08'
-    const [lastY, lastM] = lastId.split('-').map(Number)
-    const nm = nextMonth(lastY, lastM)
-    const id = `${nm.year}-${pad(nm.month)}`
-    if (s.months[id]) {
-      toast('Bu ay artıq mövcuddur.')
-      return s.months[id]!
-    }
-    const month: Month = { id, year: nm.year, month: nm.month, name: `${monthName(nm.month)} ${nm.year}`, createdAt: Date.now() }
-    await set(ref(db, `months/${id}`), month)
-    setActiveMonthId(id)
-    toast('Ay yaradıldı')
-    return month
-  }, [toast, setActiveMonthId])
-
-  const deleteMonth = useCallback(
-    async (monthId: string) => {
+  // ---- Teacher payments deletion ----
+  const deleteTeacherPayments = useCallback(
+    async (teacherId: string, monthId: string) => {
       const s = stateRef.current
-      await remove(ref(db, `months/${monthId}`))
-      await remove(ref(db, `cells/${monthId}`))
-      const payload: Record<string, unknown> = {}
-      for (const id of Object.keys(s.courseInstances)) {
-        const inst = s.courseInstances[id]
-        if (inst?.monthId === monthId) payload[`courseInstances/${id}`] = null
+      const paths: string[] = []
+      const courseInstancesToRemove: string[] = []
+      for (const [id, inst] of Object.entries(s.courseInstances)) {
+        if (inst.teacherId === teacherId && inst.monthId === monthId) {
+          paths.push(`courseInstances/${id}`)
+          courseInstancesToRemove.push(id)
+        }
       }
-      if (Object.keys(payload).length) await update(ref(db), payload)
-      if (activeRef.current === monthId) {
-        const rest = Object.keys(stateRef.current.months).filter((k) => k !== monthId).sort()
-        const next = rest[0] ?? null
-        if (next) setActiveMonthId(next)
+      const monthCells = s.cellsByMonth[monthId] ?? {}
+      const teacherCells = monthCells[teacherId] ?? {}
+      for (const [dayStr, cell] of Object.entries(teacherCells)) {
+        if (cell.courseInstanceId && courseInstancesToRemove.includes(cell.courseInstanceId)) {
+          paths.push(cellPath(monthId, teacherId, Number(dayStr)))
+        }
       }
-      toast('Ay silindi')
+      if (paths.length === 0) {
+        toast('Bu müəllim üçün ödəniş tapılmadı', 'error')
+        return
+      }
+      await recordHistory('Müəllim ödənişi silindi', paths, async () => {
+        const payload: Record<string, unknown> = {}
+        for (const p of paths) payload[p] = null
+        await update(ref(db), payload)
+      })
+      toast('Müəllim ödənişi silindi')
     },
-    [toast, setActiveMonthId],
+    [toast, recordHistory],
   )
 
+  // ---- Archive ----
+  const addArchive = useCallback(
+    async (year: number, activeMonths: Record<string, Month>) => {
+      const endYear = year + 1
+      const archiveId = `${year}-${endYear}`
+      const archivedMonths: Record<string, Month> = {}
+      for (const [id, m] of Object.entries(activeMonths)) {
+        if (m.year === year || m.year === endYear) archivedMonths[id] = m
+      }
+      const archivedInstances: Record<string, CourseInstance> = {}
+      for (const [id, inst] of Object.entries(stateRef.current.courseInstances)) {
+        if (archivedMonths[inst.monthId]) archivedInstances[id] = inst
+      }
+      const archivedCells: Record<string, Record<string, Record<string, CellValue>>> = {}
+      for (const monthId of Object.keys(archivedMonths)) {
+        if (stateRef.current.cellsByMonth[monthId]) archivedCells[monthId] = stateRef.current.cellsByMonth[monthId]
+      }
+      const archive: ArchivedYear = {
+        id: archiveId,
+        name: `${year}-${endYear} tədris ili`,
+        archivedAt: Date.now(),
+        startYear: year,
+        endYear,
+        months: archivedMonths,
+        teachers: stateRef.current.teachers,
+        courses: stateRef.current.courses,
+        courseInstances: archivedInstances,
+        cellsByMonth: archivedCells,
+        settings: stateRef.current.settings,
+      }
+      await set(ref(db, `archives/${archiveId}`), archive)
+      // Remove archived months from active
+      const payload: Record<string, unknown> = {}
+      for (const monthId of Object.keys(archivedMonths)) {
+        payload[`months/${monthId}`] = null
+        payload[`cells/${monthId}`] = null
+      }
+      for (const id of Object.keys(archivedInstances)) {
+        payload[`courseInstances/${id}`] = null
+      }
+      await update(ref(db), payload)
+      toast(`${year}-${endYear} ili arxivləşdirildi`)
+    },
+    [toast],
+  )
+
+  const deleteArchive = useCallback(
+    async (archiveId: string) => {
+      await remove(ref(db, `archives/${archiveId}`))
+      toast('Arxiv silindi')
+    },
+    [toast],
+  )
+
+  // ---- Teacher management ----
   const addTeacher = useCallback(
     async (fullName: string) => {
       const id = genId('t')
@@ -619,6 +628,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     toast('Müəllim silindi')
   }, [toast])
 
+  // ---- Course management ----
   const addCourse = useCallback(
     async (data: Omit<Course, 'id'>) => {
       const id = genId('c')
@@ -637,6 +647,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     toast('Kurs silindi')
   }, [toast])
 
+  // ---- Room management ----
   const addRoom = useCallback(
     async (name: string) => {
       const id = genId('r')
@@ -670,7 +681,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       deleteInstanceDay,
       updateInstance,
       addMonth,
+      addMonthById,
       deleteMonth,
+      trashMonth,
+      restoreMonth,
+      permanentDeleteMonth,
+      purgeExpiredTrash,
       addTeacher,
       updateTeacher,
       deleteTeacher,
@@ -681,6 +697,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       updateRoom,
       deleteRoom,
       updateSettings,
+      deleteTeacherPayments,
+      addArchive,
+      deleteArchive,
       toast,
       notifyError,
       online,
@@ -691,9 +710,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }),
     [
       state, activeMonthId, setActiveMonthId, placeCourse, setCellX, clearCell,
-      deleteInstance, deleteInstanceDay, updateInstance, addMonth, deleteMonth,
+      deleteInstance, deleteInstanceDay, updateInstance, addMonth, addMonthById, deleteMonth,
+      trashMonth, restoreMonth, permanentDeleteMonth, purgeExpiredTrash,
       addTeacher, updateTeacher, deleteTeacher, addCourse, updateCourse, deleteCourse,
-      addRoom, updateRoom, deleteRoom, updateSettings, toast, notifyError, online,
+      addRoom, updateRoom, deleteRoom, updateSettings,
+      deleteTeacherPayments, addArchive, deleteArchive,
+      toast, notifyError, online,
       undo, redo, historyTick,
     ],
   )
@@ -719,13 +741,3 @@ export function DataProvider({ children }: { children: ReactNode }) {
   )
 }
 
-async function seedDatabase(toast: (msg: string, type?: 'success' | 'error') => void) {
-  const payload: Record<string, unknown> = {}
-  for (const t of INITIAL_TEACHERS) payload[`teachers/${t.id}`] = t
-  for (const c of INITIAL_COURSES) payload[`courses/${c.id}`] = { ...c, price: c.price ?? null }
-  for (const r of INITIAL_ROOMS) payload[`rooms/r_${r.replace(/\//g, '_')}`] = { id: `r_${r.replace(/\//g, '_')}`, name: r }
-  payload['settings'] = DEFAULT_SETTINGS
-  payload['months/2026-09'] = { id: '2026-09', year: 2026, month: 9, name: 'Sentyabr 2026', createdAt: Date.now() }
-  await update(ref(db), payload)
-  toast('İlkin məlumatlar yaradıldı')
-}

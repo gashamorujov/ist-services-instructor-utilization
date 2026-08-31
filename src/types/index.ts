@@ -32,6 +32,7 @@ export type Month = {
   month: number // 1-12
   name: string // Azerbaijani name, e.g. "Sentyabr 2026"
   createdAt: number
+  deletedAt?: number // timestamp when moved to trash; undefined = active
 }
 
 export type CourseInstance = {
@@ -73,4 +74,18 @@ export type PaymentRow = {
   totalAmount: number
   hasUnpaid: boolean
   hasPaid: boolean
+}
+
+export type ArchivedYear = {
+  id: string // "2026-2027"
+  name: string // "2026-2027 tədris ili"
+  archivedAt: number
+  startYear: number
+  endYear: number
+  months: Record<string, Month>
+  teachers: Record<string, Teacher>
+  courses: Record<string, Course>
+  courseInstances: Record<string, CourseInstance>
+  cellsByMonth: Record<string, Record<string, Record<string, CellValue>>>
+  settings: Settings
 }

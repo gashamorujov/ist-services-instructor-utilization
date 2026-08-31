@@ -177,7 +177,7 @@ describe('payments & stats', () => {
     expect(pay[0]!.totalAmount).toBe(280)
   })
 
-  it('TEST (17 example): SL + SH = 2 courses, 48 hours, 140 AZN', () => {
+  it('TEST (17 example): SL + SH = 6 courses, 48 hours, 420 AZN', () => {
     const sl = makeInstance({ id: 'ci_sl2', price: null })
     const sh = makeInstance({ id: 'ci_sh', code: 'SH', hours: 16, durationDays: 2, days: ['2026-09-05', '2026-09-06'] })
     const pay = computePayments([sl, sh], [teacher], settings)
@@ -192,7 +192,6 @@ describe('payments & stats', () => {
     const cellPaid: CellValue = { value: 'SL', type: 'course', courseInstanceId: 'ci_paid' }
     const cellUnpaid: CellValue = { value: 'SL', type: 'course', courseInstanceId: 'ci_unpaid' }
     expect(cellColor(cellPaid, paid, settings.colors)).toBe('#008000')
-    // UNPAID cells look like other cells (visual neutral)
     expect(cellColor(cellUnpaid, unpaid, settings.colors)).toBe('#000000')
   })
 
@@ -210,5 +209,45 @@ describe('payments & stats', () => {
     expect(stats.totalAmount).toBe(140)
     expect(stats.paidAmount).toBe(70)
     expect(stats.unpaidAmount).toBe(70)
+  })
+
+  it('multiple teachers are computed separately', () => {
+    const t2: Teacher = { id: 't2', fullName: 'Test 2', order: 2, active: true }
+    const inst1 = makeInstance({ id: 'ci_t1', teacherId: 't1' })
+    const inst2 = makeInstance({ id: 'ci_t2', teacherId: 't2', days: ['2026-09-01', '2026-09-02'] })
+    const pay = computePayments([inst1, inst2], [teacher, t2], settings)
+    expect(pay).toHaveLength(2)
+    const t1Pay = pay.find((p) => p.teacherId === 't1')
+    const t2Pay = pay.find((p) => p.teacherId === 't2')
+    expect(t1Pay?.courseCount).toBe(4)
+    expect(t1Pay?.totalAmount).toBe(280)
+    expect(t2Pay?.courseCount).toBe(2)
+    expect(t2Pay?.totalAmount).toBe(140)
+  })
+
+  it('TRASH: month deletedAt field works correctly', () => {
+    const activeMonth = { id: '2026-09', year: 2026, month: 9, name: 'Sentyabr 2026', createdAt: Date.now() }
+    const trashedMonth = { id: '2026-10', year: 2026, month: 10, name: 'Oktyabr 2026', createdAt: Date.now(), deletedAt: Date.now() }
+    expect(activeMonth.deletedAt).toBeUndefined()
+    expect(trashedMonth.deletedAt).toBeDefined()
+  })
+
+  it('ARCHIVE: ArchivedYear contains correct structure', () => {
+    const archive = {
+      id: '2026-2027',
+      name: '2026-2027 tədris ili',
+      archivedAt: Date.now(),
+      startYear: 2026,
+      endYear: 2027,
+      months: {},
+      teachers: {},
+      courses: {},
+      courseInstances: {},
+      cellsByMonth: {},
+      settings,
+    }
+    expect(archive.id).toBe('2026-2027')
+    expect(archive.startYear).toBe(2026)
+    expect(archive.endYear).toBe(2027)
   })
 })

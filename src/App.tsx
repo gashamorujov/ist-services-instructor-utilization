@@ -8,8 +8,9 @@ import { CoursesPage } from './pages/CoursesPage'
 import { PaymentsPage } from './pages/PaymentsPage'
 import { MonthsPage } from './pages/MonthsPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { ArchivePage } from './pages/ArchivePage'
 
-type PageKey = 'dashboard' | 'schedule' | 'teachers' | 'courses' | 'payments' | 'months' | 'settings'
+type PageKey = 'dashboard' | 'schedule' | 'teachers' | 'courses' | 'payments' | 'months' | 'settings' | 'archive'
 
 export default function App() {
   const [page, setPage] = useState<PageKey>('schedule')
@@ -24,6 +25,7 @@ export default function App() {
         {page === 'courses' && <CoursesPage />}
         {page === 'payments' && <PaymentsPage />}
         {page === 'months' && <MonthsPage onOpenSchedule={openSchedule} />}
+        {page === 'archive' && <ArchivePage />}
         {page === 'settings' && <SettingsPage />}
       </Layout>
     </DataProvider>
