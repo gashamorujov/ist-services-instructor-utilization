@@ -42,7 +42,7 @@ export function Layout({
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const { session, isAdmin } = useAuth()
-  const { canUndo, canRedo, undo, redo } = useData()
+  const { loading, canUndo, canRedo, undo, redo } = useData()
 
   const handleNav = (key: string) => {
     onNavigate(key)
@@ -94,6 +94,20 @@ export function Layout({
       <div className="text-xs text-slate-500">Bütün səlahiyyətlər açıqdır</div>
     </div>
   )
+
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center bg-slate-100">
+        <div className="text-center">
+          <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-brand-600 text-lg font-extrabold text-white">
+            IS
+          </div>
+          <div className="h-8 w-48 animate-pulse rounded bg-slate-200" />
+          <p className="mt-3 text-sm text-slate-500">Məlumatlar yüklənir...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-full bg-slate-100">

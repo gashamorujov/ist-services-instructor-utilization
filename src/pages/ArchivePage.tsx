@@ -35,7 +35,7 @@ export function ArchivePage() {
 
   const handleArchive = (year: number) => {
     const yearMonths = Object.fromEntries(
-      Object.entries(months).filter(([_, m]) => !m.deletedAt && (m.year === year || m.year === year + 1))
+      Object.entries(months).filter(([, m]) => !m.deletedAt && (m.year === year || m.year === year + 1))
     )
     setConfirmArchive({ year, monthCount: Object.keys(yearMonths).length })
   }
@@ -43,7 +43,7 @@ export function ArchivePage() {
   const confirmArchiveAction = async () => {
     if (!confirmArchive) return
     const yearMonths = Object.fromEntries(
-      Object.entries(months).filter(([_, m]) => !m.deletedAt && (m.year === confirmArchive.year || m.year === confirmArchive.year + 1))
+      Object.entries(months).filter(([, m]) => !m.deletedAt && (m.year === confirmArchive.year || m.year === confirmArchive.year + 1))
     )
     await addArchive(confirmArchive.year, yearMonths)
     setConfirmArchive(null)

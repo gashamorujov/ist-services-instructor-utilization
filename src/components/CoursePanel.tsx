@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Button, Field, Input, Modal, Select } from './ui'
 import { useData } from '../store/DataContext'
 import { statusLabel } from '../utils/calc'
@@ -14,18 +14,10 @@ export function CoursePanel({
   const { courseInstances, courses, teachers, rooms, settings, updateInstance, deleteInstance, toast } = useData()
   const inst: CourseInstance | undefined = instanceId ? courseInstances[instanceId] : undefined
   const course = inst ? Object.values(courses).find(c => c.code === inst.code) : undefined
-  const [room, setRoom] = useState('')
-  const [status, setStatus] = useState<PaymentStatus>('DEFAULT')
-  const [price, setPrice] = useState('')
-  const [location, setLocation] = useState<'Elmlər' | 'Ramana' | null>(null)
-
-  useEffect(() => {
-    if (!inst) return
-    setRoom(inst.room ?? '')
-    setStatus(inst.paymentStatus)
-    setPrice(inst.price != null ? String(inst.price) : '')
-    setLocation(inst.location)
-  }, [inst])
+  const [room, setRoom] = useState(inst?.room ?? '')
+  const [status, setStatus] = useState<PaymentStatus>(inst?.paymentStatus ?? 'DEFAULT')
+  const [price, setPrice] = useState(inst?.price != null ? String(inst.price) : '')
+  const [location, setLocation] = useState<'Elmlər' | 'Ramana' | null>(inst?.location ?? null)
 
   if (!inst) {
     return (

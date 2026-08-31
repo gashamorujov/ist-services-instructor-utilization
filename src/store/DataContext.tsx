@@ -123,7 +123,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<{ id: number; msg: string; type: 'success' | 'error' }[]>([])
   const [online, setOnline] = useState(true)
   const stateRef = useRef(state)
-  stateRef.current = state
   const activeRef = useRef<string | null>(null)
 
   const toast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
@@ -139,10 +138,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setActiveMonthIdState(id)
   }, [])
 
+  // Sync stateRef after render
+  useEffect(() => {
+    stateRef.current = state
+  }, [state])
+
   // ---- Undo / Redo history ----
   const [historyTick, setHistoryTick] = useState(0)
+  const [canUndoState, setCanUndoState] = useState(false)
+  const [canRedoState, setCanRedoState] = useState(false)
   const undoStackRef = useRef<{ label: string; before: Map<string, unknown>; after: Map<string, unknown> }[]>([])
   const redoStackRef = useRef<{ label: string; before: Map<string, unknown>; after: Map<string, unknown> }[]>([])
+
+  // Sync canUndo/canRedo state from refs whenever history changes
+  useEffect(() => {
+    setCanUndoState(undoStackRef.current.length > 0)
+    setCanRedoState(redoStackRef.current.length > 0)
+  }, [historyTick])
 
   const recordHistory = useCallback(
     async (label: string, paths: string[], run: () => Promise<void>) => {
@@ -244,6 +256,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [notifyError])
 
+  const permanentDeleteMonthInternal = useCallback(async (monthId: string) => {
+    await remove(ref(db, `months/${monthId}`))
+    await remove(ref(db, `cells/${monthId}`))
+    const payload: Record<string, unknown> = {}
+    for (const id of Object.keys(stateRef.current.courseInstances)) {
+      const inst = stateRef.current.courseInstances[id]
+      if (inst?.monthId === monthId) payload[`courseInstances/${id}`] = null
+    }
+    if (Object.keys(payload).length) await update(ref(db), payload)
+    if (activeRef.current === monthId) {
+      const rest = Object.keys(stateRef.current.months)
+        .filter((k) => k !== monthId && !stateRef.current.months[k]?.deletedAt)
+        .sort()
+      const next = rest[0] ?? null
+      if (next) setActiveMonthId(next)
+    }
+  }, [setActiveMonthId])
+
   // ---- Auto-purge expired trash (24 hours) ----
   useEffect(() => {
     const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000
@@ -259,7 +289,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     purge()
     const interval = setInterval(purge, 60 * 1000) // check every minute
     return () => clearInterval(interval)
-  }, [])
+  }, [permanentDeleteMonthInternal])
 
   // ---- Month helpers ----
   const addMonth = useCallback(async (): Promise<Month> => {
@@ -301,23 +331,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return m
   }, [toast, setActiveMonthId])
 
-  const permanentDeleteMonthInternal = async (monthId: string) => {
-    await remove(ref(db, `months/${monthId}`))
-    await remove(ref(db, `cells/${monthId}`))
-    const payload: Record<string, unknown> = {}
-    for (const id of Object.keys(stateRef.current.courseInstances)) {
-      const inst = stateRef.current.courseInstances[id]
-      if (inst?.monthId === monthId) payload[`courseInstances/${id}`] = null
-    }
-    if (Object.keys(payload).length) await update(ref(db), payload)
-    if (activeRef.current === monthId) {
-      const rest = Object.keys(stateRef.current.months)
-        .filter((k) => k !== monthId && !stateRef.current.months[k]?.deletedAt)
-        .sort()
-      const next = rest[0] ?? null
-      if (next) setActiveMonthId(next)
-    }
-  }
 
   const deleteMonth = useCallback(
     async (monthId: string) => {
@@ -326,7 +339,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       )
       toast('Ay silindi')
     },
-    [toast, recordHistory],
+    [toast, recordHistory, permanentDeleteMonthInternal],
   )
 
   const trashMonth = useCallback(
@@ -371,7 +384,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       )
       toast('Ay həmişəlik silindi')
     },
-    [toast, recordHistory],
+    [toast, recordHistory, permanentDeleteMonthInternal],
   )
 
   const purgeExpiredTrash = useCallback(async () => {
@@ -383,7 +396,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
         await permanentDeleteMonthInternal(m.id)
       }
     }
-  }, [])
+  }, [permanentDeleteMonthInternal])
+
+  const deleteInstanceInternal = async (instanceId: string) => {
+    const inst = stateRef.current.courseInstances[instanceId]
+    if (!inst) return
+    await remove(ref(db, `courseInstances/${instanceId}`))
+    const payload: Record<string, unknown> = {}
+    const monthCells = stateRef.current.cellsByMonth[inst.monthId] ?? {}
+    const teacherCells = monthCells[inst.teacherId] ?? {}
+    for (const [dayStr, cell] of Object.entries(teacherCells)) {
+      if (cell.courseInstanceId === instanceId) {
+        payload[cellPath(inst.monthId, inst.teacherId, Number(dayStr))] = null
+      }
+    }
+    if (Object.keys(payload).length > 0) await update(ref(db), payload)
+  }
 
   // ---- Place course (with next month support) ----
   const placeCourse = useCallback(
@@ -467,20 +495,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [],
   )
 
-  const deleteInstanceInternal = async (instanceId: string) => {
-    const inst = stateRef.current.courseInstances[instanceId]
-    if (!inst) return
-    await remove(ref(db, `courseInstances/${instanceId}`))
-    const payload: Record<string, unknown> = {}
-    const monthCells = stateRef.current.cellsByMonth[inst.monthId] ?? {}
-    const teacherCells = monthCells[inst.teacherId] ?? {}
-    for (const [dayStr, cell] of Object.entries(teacherCells)) {
-      if (cell.courseInstanceId === instanceId) {
-        payload[cellPath(inst.monthId, inst.teacherId, Number(dayStr))] = null
-      }
-    }
-    if (Object.keys(payload).length > 0) await update(ref(db), payload)
-  }
 
   const deleteInstance = useCallback(
     async (instanceId: string) => {
@@ -703,8 +717,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       toast,
       notifyError,
       online,
-      canUndo: undoStackRef.current.length > 0,
-      canRedo: redoStackRef.current.length > 0,
+      canUndo: canUndoState,
+      canRedo: canRedoState,
       undo,
       redo,
     }),
@@ -715,8 +729,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       addTeacher, updateTeacher, deleteTeacher, addCourse, updateCourse, deleteCourse,
       addRoom, updateRoom, deleteRoom, updateSettings,
       deleteTeacherPayments, addArchive, deleteArchive,
-      toast, notifyError, online,
-      undo, redo, historyTick,
+      toast, notifyError, online, canUndoState, canRedoState,
+      undo, redo,
     ],
   )
 
