@@ -53,9 +53,9 @@ describe('export', () => {
     expect(payIdx).toBeGreaterThan(0)
     const payRow = rows[payIdx + 2]
     expect(payRow?.[0]).toBe('Rəhimov Ehtiram')
-    expect(payRow?.[1]).toBe(1)
+    expect(payRow?.[1]).toBe(4)
     expect(payRow?.[2]).toBe(32)
-    expect(payRow?.[3]).toBe(70)
+    expect(payRow?.[3]).toBe(280)
     expect(String(payRow?.[4])).toContain('Ödənilib')
   })
 

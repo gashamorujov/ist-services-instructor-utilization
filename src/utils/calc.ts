@@ -67,10 +67,12 @@ export function computePayments(
 
   for (const inst of instances) {
     const row = rowFor(inst.teacherId)
-    row.courseCount += 1
+    // Hər kurs xanası (günü) 1 kurs sayılır: məs. SL SL SL SL = 4 kurs
+    const cellCount = Math.max(1, inst.days.length)
+    const pricePerCell = inst.price ?? settings.defaultCoursePrice
+    row.courseCount += cellCount
     row.totalHours += inst.hours
-    const price = inst.price ?? settings.defaultCoursePrice
-    row.totalAmount += price
+    row.totalAmount += pricePerCell * cellCount
     if (inst.paymentStatus === 'PAID') row.hasPaid = true
     if (inst.paymentStatus === 'UNPAID') row.hasUnpaid = true
   }

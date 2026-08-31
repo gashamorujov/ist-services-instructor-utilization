@@ -168,22 +168,22 @@ describe('payments & stats', () => {
     ...partial,
   })
 
-  it('TEST 4/5: 4 SL cells count as 1 course, 32 hours, 70 AZN', () => {
+  it('TEST 4/5: 4 SL cells = 4 courses, 32 hours, 280 AZN', () => {
     const inst = makeInstance({ id: 'ci_sl', price: null })
     const pay = computePayments([inst], [teacher], settings)
     expect(pay).toHaveLength(1)
-    expect(pay[0]!.courseCount).toBe(1)
+    expect(pay[0]!.courseCount).toBe(4)
     expect(pay[0]!.totalHours).toBe(32)
-    expect(pay[0]!.totalAmount).toBe(70)
+    expect(pay[0]!.totalAmount).toBe(280)
   })
 
   it('TEST (17 example): SL + SH = 2 courses, 48 hours, 140 AZN', () => {
     const sl = makeInstance({ id: 'ci_sl2', price: null })
     const sh = makeInstance({ id: 'ci_sh', code: 'SH', hours: 16, durationDays: 2, days: ['2026-09-05', '2026-09-06'] })
     const pay = computePayments([sl, sh], [teacher], settings)
-    expect(pay[0]!.courseCount).toBe(2)
+    expect(pay[0]!.courseCount).toBe(6)
     expect(pay[0]!.totalHours).toBe(48)
-    expect(pay[0]!.totalAmount).toBe(140)
+    expect(pay[0]!.totalAmount).toBe(420)
   })
 
   it('TEST 6/7 + color: PAID -> green, UNPAID stays default (black)', () => {
@@ -197,7 +197,7 @@ describe('payments & stats', () => {
   })
 
   it('XS manual price is used instead of default', () => {
-    const xs = makeInstance({ id: 'ci_xs', code: 'XS', price: 200, hours: 8, durationDays: 1 })
+    const xs = makeInstance({ id: 'ci_xs', code: 'XS', price: 200, hours: 8, durationDays: 1, days: ['2026-09-12'] })
     const pay = computePayments([xs], [teacher], settings)
     expect(pay[0]!.totalAmount).toBe(200)
   })

@@ -189,7 +189,7 @@ export function SchedulePage() {
 
   const ctxCell = ctxMenu ? monthCells[ctxMenu.teacherId]?.[String(ctxMenu.day)] : undefined
   const ctxInstance = ctxCell?.courseInstanceId ? courseInstances[ctxCell.courseInstanceId] : undefined
-  const ctxCourse = ctxInstance ? courses[ctxInstance.code] : undefined
+  const ctxCourse = ctxInstance ? Object.values(courses).find(c => c.code === ctxInstance.code) : undefined
   const isSLO = ctxCourse?.code === 'SL' || ctxCourse?.code === 'SO'
 
   return (
@@ -315,7 +315,7 @@ export function SchedulePage() {
                       {Array.from({ length: dim }, (_, i) => i + 1).map((day) => {
                         const cell = cells[String(day)]
                         const instance = cell?.courseInstanceId ? courseInstances[cell.courseInstanceId] : undefined
-                        const course = instance ? courses[instance.code] : undefined
+                        const course = instance ? Object.values(courses).find(c => c.code === instance.code) : undefined
                         return (
                           <Cell
                             key={day}

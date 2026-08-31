@@ -13,7 +13,7 @@ export function CoursePanel({
 }) {
   const { courseInstances, courses, teachers, rooms, settings, updateInstance, deleteInstance, toast } = useData()
   const inst: CourseInstance | undefined = instanceId ? courseInstances[instanceId] : undefined
-  const course = inst ? courses[inst.code] : undefined
+  const course = inst ? Object.values(courses).find(c => c.code === inst.code) : undefined
   const [room, setRoom] = useState('')
   const [status, setStatus] = useState<PaymentStatus>('DEFAULT')
   const [price, setPrice] = useState('')
