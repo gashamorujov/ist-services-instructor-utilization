@@ -162,7 +162,9 @@ export function SchedulePage() {
     if (!ctxMenu || !currentMonth) return
     const cell = monthCells[ctxMenu.teacherId]?.[String(ctxMenu.day)]
     if (!cell?.courseInstanceId) return
-    await data.updateCellLocation(currentMonth.id, ctxMenu.teacherId, ctxMenu.day, loc)
+    // If the same location is already set, remove it (toggle off)
+    const next = cell.location === loc ? null : loc
+    await data.updateCellLocation(currentMonth.id, ctxMenu.teacherId, ctxMenu.day, next)
     setCtxMenu(null)
   }
 
@@ -623,15 +625,15 @@ export function SchedulePage() {
               <div className="my-1 border-t border-slate-100" />
               <button
                 onClick={() => void handleLocation('Elmlər')}
-                className="block w-full rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+                className={`block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100 ${ctxCell?.location === 'Elmlər' ? 'font-bold text-emerald-700 bg-emerald-50' : 'text-slate-700'}`}
               >
-                Keçirilmə yeri: Elmlər
+                {ctxCell?.location === 'Elmlər' ? '✓ ' : ''}Keçirilmə yeri: Elmlər
               </button>
               <button
                 onClick={() => void handleLocation('Ramana')}
-                className="block w-full rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+                className={`block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100 ${ctxCell?.location === 'Ramana' ? 'font-bold text-blue-700 bg-blue-50' : 'text-slate-700'}`}
               >
-                Keçirilmə yeri: Ramana
+                {ctxCell?.location === 'Ramana' ? '✓ ' : ''}Keçirilmə yeri: Ramana
               </button>
               <div className="my-1 border-t border-slate-100" />
             </>
@@ -785,9 +787,9 @@ function Cell({
               {cell.location === 'Ramana' ? 'R' : 'E'}
             </span>
           )}
-          {/* Room indicator: bottom-right, adjacent to borders */}
+          {/* Room indicator: bottom-left edge, small badge */}
           {instance?.room && (
-            <span className="absolute bottom-0 right-0 z-10 rounded-tl bg-slate-200 px-[3px] text-[8px] font-medium leading-tight text-slate-700">
+            <span className="absolute bottom-0 left-0 z-10 rounded-tr bg-slate-200 px-1 text-[7px] font-medium leading-none text-slate-600">
               {instance.room}
             </span>
           )}
